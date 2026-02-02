@@ -1,5 +1,6 @@
 """應用程式配置管理"""
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import Optional
 
 
@@ -20,7 +21,10 @@ class Settings(BaseSettings):
     docker_base_image: str = "refactor-base:latest"
     docker_network: str = "refactor-network"
     docker_volume_prefix: str = "/tmp/refactor-workspaces"
-    agent_runtime_host_path: Optional[str] = None  # DEPRECATED: Agent 已烤進 base image，不再使用
+
+    # 開發模式配置
+    dev_mode: bool = False
+    agent_host_path: Optional[str] = None  # 本機 agent 目錄路徑
 
     # 容器資源限制
     container_cpu_limit: float = 2.0
@@ -48,6 +52,27 @@ class Settings(BaseSettings):
     gcp_location: str = "us-central1"
     vertex_ai_model: str = "gemini-2.5-pro"
     google_application_credentials: Optional[str] = None
+
+    @field_validator('agent_host_path')
+    @classmethod
+    def validate_agent_path(cls, v: Optional[str]) -> Optional[str]:
+        """驗證 agent_host_path 在 dev_mode 啟用時必須存在"""
+        if not v:
+            return v
+
+        # 檢查目錄存在
+        import os
+        if not os.path.isdir(v):
+            raise ValueError(f"AGENT_HOST_PATH 目錄不存在: {v}")
+
+        # 檢查必要檔案
+        ai_server = os.path.join(v, "ai_server.py")
+        if not os.path.isfile(ai_server):
+            raise ValueError(
+                f"AGENT_HOST_PATH '{v}' 缺少 ai_server.py 檔案"
+            )
+
+        return v
 
     class Config:
         env_file = ".env"

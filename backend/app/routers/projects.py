@@ -1,5 +1,6 @@
 """專案路由"""
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pymongo.asynchronous.database import AsyncDatabase
 
 from ..database.mongodb import get_database
@@ -132,10 +133,21 @@ async def list_projects(
 @router.post("/{project_id}/provision", response_model=ProvisionResponse)
 async def provision_project(
     project_id: str,
+    dev_mode: Optional[bool] = Query(
+        default=None,
+        description="開發模式覆蓋 (true=啟用, false=停用, null=使用全域設定)"
+    ),
     service: ProjectService = Depends(get_project_service),
     current_user: User = Depends(get_current_user),
 ):
-    """Provision 專案 - 建立容器並 clone repository（需要認證）"""
+    """Provision 專案 - 建立容器並 clone repository（需要認證）
+
+    Query Parameters:
+        dev_mode: 覆蓋全域 DEV_MODE 設定
+          - true: 強制啟用開發模式（掛載本機 agent）
+          - false: 強制停用開發模式（使用 image 內建 agent）
+          - null (預設): 使用 .env 中的 DEV_MODE 設定
+    """
     # 驗證所有權
     project = await service.get_project_by_id(project_id)
     if not project:
@@ -148,7 +160,7 @@ async def provision_project(
         )
 
     try:
-        project = await service.provision_project(project_id)
+        project = await service.provision_project(project_id, dev_mode=dev_mode)
         if not project:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="專案不存在"

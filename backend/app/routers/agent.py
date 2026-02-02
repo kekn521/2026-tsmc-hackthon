@@ -1,4 +1,4 @@
-"""Simplified Agent API - Container AI Server 代理"""
+"""Agent API - 代理 Container AI Server 的通訊"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from pymongo.asynchronous.database import AsyncDatabase
 from sse_starlette.sse import EventSourceResponse
@@ -22,8 +22,8 @@ async def get_project_service(
     return ProjectService(db)
 
 
-@router.post("/{project_id}/cloud-run")
-async def run_cloud_agent(
+@router.post("/{project_id}/agent/run")
+async def run_agent(
     project_id: str,
     project_service: ProjectService = Depends(get_project_service),
     current_user: User = Depends(get_current_user),
@@ -32,12 +32,10 @@ async def run_cloud_agent(
 
     流程：
     1. 驗證專案權限和狀態（必須是 READY）
-    2. 呼叫容器 /run endpoint（啟動 Agent）
-    3. 立即返回 task_id
-
-    註：repo 已在 provision 時 clone，無需再次 clone
+    2. 呼叫容器內的 AI Server /run endpoint
+    3. 立即返回 run_id，Agent 在背景執行
     """
-    # 1. 驗證專案存在和權限
+    # 驗證專案存在和權限
     project = await project_service.get_project_by_id(project_id)
     if not project or project.owner_id != current_user.id:
         raise HTTPException(status_code=404, detail="專案不存在或無權限")
@@ -52,8 +50,7 @@ async def run_cloud_agent(
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            # 2. 啟動 Agent（repo 已在 provision 時 clone）
-            logger.info(f"呼叫容器 run: {container_name}")
+            logger.info(f"呼叫容器 AI Server: {container_name}")
             run_response = await client.post(
                 f"http://{container_name}:8000/run",
                 json={
@@ -65,9 +62,15 @@ async def run_cloud_agent(
             result = run_response.json()
 
         logger.info(f"Agent 任務已啟動: project={project_id}, task_id={result['task_id']}")
+
+        # 轉換為前端期望格式
         return {
-            "status": "success",
-            "task_id": result["task_id"],
+            "run_id": result["task_id"],
+            "project_id": project_id,
+            "status": "RUNNING",
+            "iteration_index": 0,
+            "phase": "plan",
+            "created_at": result.get("created_at", ""),
             "message": "Agent 任務已啟動，正在背景執行"
         }
 
@@ -76,14 +79,13 @@ async def run_cloud_agent(
         raise HTTPException(status_code=503, detail=f"AI Server 錯誤: {str(e)}")
 
 
-@router.get("/{project_id}/cloud-run/{task_id}")
-async def get_task_status(
+@router.get("/{project_id}/agent/runs")
+async def list_agent_runs(
     project_id: str,
-    task_id: str,
     project_service: ProjectService = Depends(get_project_service),
     current_user: User = Depends(get_current_user),
 ):
-    """查詢 Agent 任務執行狀態"""
+    """列出專案的所有 Agent Runs"""
     # 驗證專案權限
     project = await project_service.get_project_by_id(project_id)
     if not project or project.owner_id != current_user.id:
@@ -94,19 +96,96 @@ async def get_task_status(
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(
-                f"http://{container_name}:8000/tasks/{task_id}"
+                f"http://{container_name}:8000/tasks"
             )
             response.raise_for_status()
-            return response.json()
+            tasks_data = response.json()
+
+        # 轉換格式
+        status_mapping = {
+            "pending": "RUNNING",
+            "running": "RUNNING",
+            "success": "DONE",
+            "failed": "FAILED"
+        }
+
+        runs = []
+        for task in tasks_data.get("tasks", []):
+            runs.append({
+                "id": task["task_id"],
+                "project_id": project_id,
+                "iteration_index": 0,
+                "phase": "plan",
+                "status": status_mapping.get(task["status"], "RUNNING"),
+                "created_at": task.get("created_at", ""),
+                "updated_at": task.get("started_at", task.get("created_at", "")),
+                "finished_at": task.get("finished_at"),
+                "error_message": task.get("error_message"),
+            })
+
+        return {
+            "total": len(runs),
+            "runs": runs
+        }
+
+    except httpx.HTTPError as e:
+        logger.error(f"查詢 Agent Runs 失敗: {e}")
+        # 如果容器未啟動，返回空列表
+        return {"total": 0, "runs": []}
+
+
+@router.get("/{project_id}/agent/runs/{run_id}")
+async def get_agent_run_detail(
+    project_id: str,
+    run_id: str,
+    project_service: ProjectService = Depends(get_project_service),
+    current_user: User = Depends(get_current_user),
+):
+    """查詢 Agent Run 詳細狀態"""
+    # 驗證專案權限
+    project = await project_service.get_project_by_id(project_id)
+    if not project or project.owner_id != current_user.id:
+        raise HTTPException(status_code=404, detail="專案不存在或無權限")
+
+    container_name = f"refactor-project-{project_id}"
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                f"http://{container_name}:8000/tasks/{run_id}"
+            )
+            response.raise_for_status()
+            task_data = response.json()
+
+        # 轉換 AI Server 格式到前端期望格式
+        status_mapping = {
+            "pending": "RUNNING",
+            "running": "RUNNING",
+            "success": "DONE",
+            "failed": "FAILED"
+        }
+
+        return {
+            "id": run_id,
+            "project_id": project_id,
+            "iteration_index": 0,
+            "phase": "plan",
+            "status": status_mapping.get(task_data["status"], "RUNNING"),
+            "created_at": task_data.get("created_at", ""),
+            "updated_at": task_data.get("started_at", task_data.get("created_at", "")),
+            "finished_at": task_data.get("finished_at"),
+            "error_message": task_data.get("error_message"),
+        }
+
     except httpx.HTTPError as e:
         logger.error(f"查詢任務狀態失敗: {e}")
         raise HTTPException(status_code=503, detail="無法查詢任務狀態")
 
 
-@router.get("/{project_id}/cloud-run/{task_id}/stream")
-async def stream_task_logs(
+@router.get("/{project_id}/agent/runs/{run_id}/stream")
+async def stream_agent_logs(
     project_id: str,
-    task_id: str,
+    run_id: str,
     project_service: ProjectService = Depends(get_project_service),
     current_user: User = Depends(get_current_user),
 ):
@@ -121,16 +200,35 @@ async def stream_task_logs(
     async def event_generator():
         """轉發容器的 SSE stream"""
         try:
+            url = f"http://{container_name}:8000/tasks/{run_id}/stream"
+            logger.info(f"🔗 開始串流 AI Server 日誌: {url}")
+            print(f"🔗 [DEBUG] 開始連線到: {url}", flush=True)
+
             async with httpx.AsyncClient(timeout=None) as client:
-                async with client.stream(
-                    "GET",
-                    f"http://{container_name}:8000/tasks/{task_id}/stream"
-                ) as response:
+                async with client.stream("GET", url) as response:
+                    logger.info(f"✅ SSE 連線已建立，狀態碼: {response.status_code}")
+                    print(f"✅ [DEBUG] SSE 連線已建立，狀態碼: {response.status_code}", flush=True)
+
+                    line_count = 0
                     async for line in response.aiter_lines():
                         if line:
+                            line_count += 1
+                            logger.debug(f"[SSE #{line_count}] {line}")
+                            print(f"📨 [DEBUG] 收到 SSE 訊息 #{line_count}: {line[:100]}", flush=True)
                             yield line + "\n"
+
+            logger.info(f"✅ SSE 串流正常結束: run_id={run_id}, 共 {line_count} 行")
+            print(f"✅ [DEBUG] SSE 串流正常結束: {line_count} 行", flush=True)
+
+        except httpx.HTTPError as e:
+            error_msg = f"HTTP 錯誤: {str(e)}"
+            logger.error(f"❌ {error_msg}")
+            print(f"❌ [DEBUG] {error_msg}", flush=True)
+            yield f"event: error\ndata: {error_msg}\n\n"
         except Exception as e:
-            logger.error(f"Stream 轉發失敗: {e}")
-            yield f"event: error\ndata: {str(e)}\n\n"
+            error_msg = f"Stream 轉發失敗: {str(e)}"
+            logger.error(f"❌ {error_msg}")
+            print(f"❌ [DEBUG] {error_msg}", flush=True)
+            yield f"event: error\ndata: {error_msg}\n\n"
 
     return EventSourceResponse(event_generator())

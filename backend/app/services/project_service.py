@@ -195,8 +195,17 @@ class ProjectService:
         except Exception:
             return False
 
-    async def provision_project(self, project_id: str) -> Optional[Project]:
-        """Provision 專案 - 建立容器並 clone repository"""
+    async def provision_project(
+        self,
+        project_id: str,
+        dev_mode: Optional[bool] = None
+    ) -> Optional[Project]:
+        """Provision 專案 - 建立容器並 clone repository
+
+        Args:
+            project_id: 專案 ID
+            dev_mode: 開發模式覆蓋 (None=使用全域設定)
+        """
         container_service = ContainerService()
 
         # 獲取專案
@@ -204,9 +213,20 @@ class ProjectService:
         if not project:
             return None
 
-        # 檢查狀態
-        if project.status != ProjectStatus.CREATED:
-            raise ValueError(f"專案狀態必須為 CREATED,目前為 {project.status}")
+        # 檢查狀態 - 允許 CREATED 和 STOPPED 狀態重新 provision
+        if project.status not in [ProjectStatus.CREATED, ProjectStatus.STOPPED]:
+            raise ValueError(
+                f"專案狀態必須為 CREATED 或 STOPPED,目前為 {project.status}"
+            )
+
+        # 如果是 STOPPED 狀態，先清理舊容器
+        if project.status == ProjectStatus.STOPPED and project.container_id:
+            logger.info(f"清理舊容器: {project.container_id}")
+            try:
+                container_service.remove_container(project.container_id, force=True)
+                logger.info(f"已刪除舊容器: {project.container_id}")
+            except Exception as e:
+                logger.warning(f"清理舊容器失敗 (將繼續): {e}")
 
         container_id = None
         try:
@@ -223,9 +243,12 @@ class ProjectService:
             os.makedirs(f"{project_dir}/artifacts", exist_ok=True)
             logger.info(f"建立專案目錄: {project_dir}")
 
-            # 建立容器
+            # 建立容器（傳遞 dev_mode）
             logger.info(f"建立容器: 專案 {project_id}")
-            container = container_service.create_container(project_id)
+            container = container_service.create_container(
+                project_id,
+                dev_mode=dev_mode
+            )
             container_id = container["id"]
 
             # 啟動容器

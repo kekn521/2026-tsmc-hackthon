@@ -16,13 +16,16 @@ class ChunkParser:
     - 格式化輸出讓中間過程清晰可見
     """
 
-    def __init__(self, verbose: bool = True):
+    def __init__(self, verbose: bool = True, event_callback=None):
         """初始化 ChunkParser
 
         Args:
             verbose: 是否顯示詳細資訊 (包含 metadata, tool calls 等)
+            event_callback: 可選的回調函數，用於處理每個解析事件
+                          函數簽名: callback(event_type: str, data: dict)
         """
         self.verbose = verbose
+        self.event_callback = event_callback
         self.chunk_count = 0
         self.total_input_tokens = 0
         self.total_output_tokens = 0
@@ -69,7 +72,10 @@ class ChunkParser:
         # 1. Content (文字內容)
         if hasattr(msg, 'content') and msg.content:
             content = msg.content
+            content_text = ""
+
             if isinstance(content, str):
+                content_text = content
                 # 文字內容 - 直接串流輸出
                 print(content, end="", flush=True)
             elif isinstance(content, list):
@@ -77,19 +83,40 @@ class ChunkParser:
                 for block in content:
                     if isinstance(block, dict):
                         if block.get('type') == 'text':
-                            print(block.get('text', ''), end="", flush=True)
+                            text = block.get('text', '')
+                            content_text += text
+                            print(text, end="", flush=True)
                     else:
-                        print(str(block), end="", flush=True)
+                        text = str(block)
+                        content_text += text
+                        print(text, end="", flush=True)
+
+            # 發送 content 事件
+            if content_text and self.event_callback:
+                self.event_callback("ai_content", {"content": content_text})
 
         # 2. Tool Calls (工具調用)
         if hasattr(msg, 'tool_calls') and msg.tool_calls and self.verbose:
             print(f"\n\n{'─'*60}")
             print(f"🔧 [Tool Calls] 偵測到工具調用:")
+
+            tool_calls_data = []
             for i, tool_call in enumerate(msg.tool_calls, 1):
                 print(f"\n  #{i} {tool_call.get('name', 'unknown')}")
                 print(f"      ID: {tool_call.get('id', 'N/A')}")
                 print(f"      Args: {json.dumps(tool_call.get('args', {}), indent=8, ensure_ascii=False)}")
+
+                tool_calls_data.append({
+                    "name": tool_call.get('name', 'unknown'),
+                    "id": tool_call.get('id', 'N/A'),
+                    "args": tool_call.get('args', {})
+                })
+
             print(f"{'─'*60}\n")
+
+            # 發送 tool_calls 事件
+            if self.event_callback:
+                self.event_callback("tool_calls", {"tool_calls": tool_calls_data})
 
         # 3. Usage Metadata (Token 使用量)
         if hasattr(msg, 'usage_metadata') and msg.usage_metadata and self.verbose:
@@ -108,18 +135,30 @@ class ChunkParser:
                 print(f"  Output: {output_tokens:,} tokens")
                 print(f"  Total:  {total_tokens:,} tokens")
 
+                usage_data = {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_tokens
+                }
+
                 # 顯示額外細節 (如果有)
                 if 'input_token_details' in usage:
                     details = usage['input_token_details']
                     print(f"  Input Details: cache_read={details.get('cache_read', 0)}, audio={details.get('audio', 0)}")
+                    usage_data['input_token_details'] = details
 
                 if 'output_token_details' in usage:
                     details = usage['output_token_details']
                     reasoning = details.get('reasoning', 0)
                     if reasoning > 0:
                         print(f"  Reasoning Tokens: {reasoning:,}")
+                    usage_data['output_token_details'] = details
 
                 print(f"{'─'*60}\n")
+
+                # 發送 token_usage 事件
+                if self.event_callback:
+                    self.event_callback("token_usage", usage_data)
 
         # 4. Response Metadata (回應元資料)
         if hasattr(msg, 'response_metadata') and msg.response_metadata and self.verbose:
@@ -129,6 +168,10 @@ class ChunkParser:
                 print(f"ℹ️  [Response Metadata]")
                 print(json.dumps(metadata, indent=2, ensure_ascii=False, default=str))
                 print(f"{'─'*60}\n")
+
+                # 發送 response_metadata 事件
+                if self.event_callback:
+                    self.event_callback("response_metadata", {"metadata": metadata})
 
     def _display_message_dict(self, msg_dict: dict) -> None:
         """顯示字典格式的訊息"""
@@ -142,11 +185,13 @@ class ChunkParser:
     def _parse_tools_chunk(self, tools_chunk: dict) -> None:
         """解析 tools chunk (工具執行結果)"""
         messages = tools_chunk.get('messages', [])
-        
+
         print(f"\n\n{'='*60}")
         print(f"🛠️  [Tools Execution] {len(messages)} result(s)")
         print(f"{'='*60}")
-        
+
+        tools_results = []
+
         for i, msg in enumerate(messages, 1):
             # 提取 name 和 content
             name = None
@@ -190,8 +235,20 @@ class ChunkParser:
                 if len(content) > 500:
                     print(f"     ... (共 {len(content)} 字元)")
             print(f"     {'─'*50}")
-        
+
+            # 收集工具結果
+            tools_results.append({
+                "name": name or 'unknown',
+                "tool_call_id": tool_call_id,
+                "content": content[:500] if content and len(content) > 500 else content,
+                "content_length": len(content) if content else 0
+            })
+
         print(f"{'='*60}\n")
+
+        # 發送 tools_execution 事件
+        if self.event_callback:
+            self.event_callback("tools_execution", {"results": tools_results})
 
     def _is_middleware_chunk(self, chunk: dict) -> bool:
         """檢查是否為 middleware chunk"""

@@ -91,6 +91,40 @@ docker-compose -f devops/docker-compose.yml down
 docker-compose -f devops/docker-compose.yml down -v
 ```
 
+### 開發模式 (Development Mode)
+
+在開發 Agent 程式碼時，啟用開發模式避免每次修改都重建 image：
+
+```bash
+# 1. 編輯 backend/.env
+DEV_MODE=true
+AGENT_HOST_PATH=/Users/quan/auto-refactor-agent/agent  # 使用絕對路徑
+
+# 2. 重啟 Backend
+cd backend
+uvicorn app.main:app --reload
+
+# 3. Provision 專案（agent 程式碼會動態掛載）
+curl -X POST "http://localhost:8000/api/v1/projects/{id}/provision"
+
+# 4. 修改 agent/*.py 檔案後，容器內立即生效
+```
+
+**注意事項**：
+- `AGENT_HOST_PATH` 必須是絕對路徑且目錄必須存在
+- 目錄內必須包含 `ai_server.py` 檔案
+- Agent 程式碼以唯讀模式掛載到容器
+- 生產環境請保持 `DEV_MODE=false`
+
+**API 層級控制**：
+```bash
+# 單獨為某個專案啟用開發模式
+POST /api/v1/projects/{id}/provision?dev_mode=true
+
+# 單獨為某個專案停用開發模式
+POST /api/v1/projects/{id}/provision?dev_mode=false
+```
+
 ### 本地開發 (不使用 Docker Compose)
 
 ```bash

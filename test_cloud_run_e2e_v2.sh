@@ -66,7 +66,7 @@ PROJECT_RESPONSE=$(curl -s -X POST http://localhost:8000/api/v1/projects \
   -d '{
     "repo_url":"https://github.com/emilybache/Racing-Car-Katas",
     "branch":"main",
-    "init_prompt":"分析此專案並生成重構計劃，我想要把python 轉成 go lang，並存入 ./memory/plan.md 檔案"
+    "init_prompt":"分析此專案並生成重構計劃，請專注在 /Python 的資料夾，我想要把裡面的python 轉成 go lang，並存入 ./memory/plan.md 檔案，不需要使用者確認後就直接執行所有的計劃，把它完整重構完成"
   }')
 
 echo "專案建立回應: $PROJECT_RESPONSE"

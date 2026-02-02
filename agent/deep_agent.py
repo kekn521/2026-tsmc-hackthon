@@ -52,21 +52,23 @@ class RefactorAgent:
             system_prompt=get_system_prompt("default")
         )
 
-    def run(self, user_message: str = "檢視我的專案資料夾結構"):
+    def run(self, user_message: str = "檢視我的專案資料夾結構", event_callback=None):
         """執行 Agent 並使用 ChunkParser 解析串流輸出
 
         Args:
             user_message: 使用者訊息
+            event_callback: 可選的回調函數，用於處理每個解析事件
+                          函數簽名: callback(event_type: str, data: dict)
         """
-        # 初始化 ChunkParser
-        parser = ChunkParser(verbose=self.verbose)
+        # 初始化 ChunkParser（傳入 callback）
+        parser = ChunkParser(verbose=self.verbose, event_callback=event_callback)
 
-        print(f"\n{'='*60}")
-        print(f"🚀 開始執行 Agent")
-        print(f"{'='*60}\n")
-        print(f"📝 User Message: {user_message}\n")
-        print(f"{'─'*60}")
-        print(f"💬 AI Response:\n")
+        print(f"\n{'='*60}", flush=True)
+        print(f"🚀 開始執行 Agent", flush=True)
+        print(f"{'='*60}\n", flush=True)
+        print(f"📝 User Message: {user_message}\n", flush=True)
+        print(f"{'─'*60}", flush=True)
+        print(f"💬 AI Response:\n", flush=True)
 
         # 串流執行
         result = self.agent.stream({

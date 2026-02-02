@@ -21,9 +21,12 @@ cp .env.example .env
 ```
 
 必要配置項：
-- `ANTHROPIC_API_KEY` - Anthropic API 金鑰（必填）
 - `JWT_SECRET_KEY` - JWT 簽名金鑰（生產環境務必更換）
 - `MONGODB_URL` - MongoDB 連接字串
+- `DOCKER_BASE_IMAGE` - Base Docker Image 名稱
+- `DOCKER_NETWORK` - Docker 網路名稱
+
+**注意**: LLM API Key（如 `ANTHROPIC_API_KEY`）由容器內的 AI Server 自行管理，不需要在後端 `.env` 中設定
 
 2. **建立 Base Image**
 
@@ -116,15 +119,15 @@ curl -X POST http://localhost:8000/api/v1/projects/{project_id}/provision \
 
 ```bash
 # 啟動 Agent 分析
-curl -X POST http://localhost:8000/api/v1/projects/{project_id}/cloud-run \
+curl -X POST http://localhost:8000/api/v1/projects/{project_id}/agent/run \
   -H "Authorization: Bearer YOUR_TOKEN"
 
 # 查詢任務狀態
-curl http://localhost:8000/api/v1/projects/{project_id}/cloud-run/{task_id} \
+curl http://localhost:8000/api/v1/projects/{project_id}/agent/runs/{run_id} \
   -H "Authorization: Bearer YOUR_TOKEN"
 
 # SSE 串流執行日誌
-curl http://localhost:8000/api/v1/projects/{project_id}/cloud-run/{task_id}/stream \
+curl -N http://localhost:8000/api/v1/projects/{project_id}/agent/runs/{run_id}/stream \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -188,13 +191,26 @@ export ANTHROPIC_API_KEY=your-api-key
 - **容器**: Docker, Docker Compose
 - **認證**: JWT (JSON Web Tokens)
 
-## 開發指引
+## 📚 文件
 
-詳細的開發指引和架構說明請參考 [CLAUDE.md](./CLAUDE.md)
+### 完整文件導覽
 
-## API 文件
+請參閱 **[docs/](./docs/)** 資料夾：
 
-啟動服務後訪問 http://localhost:8000/docs 查看完整的 API 文件（Swagger UI）
+- **[docs/API.md](./docs/API.md)** - REST API 完整規格（詳細的 Request/Response）
+- **[docs/BACKEND.md](./docs/BACKEND.md)** - 後端技術文件（架構、服務層、部署）
+- **[docs/guides/](./docs/guides/)** - 使用指南（CLI 工具等）
+- **[docs/testing/](./docs/testing/)** - 測試文件
+
+### 開發指引
+
+- [CLAUDE.md](./CLAUDE.md) - Claude Code 專案指引
+- [docs/README.md](./docs/README.md) - 文件索引
+
+### API 文件
+
+- **Swagger UI**: http://localhost:8000/docs（互動式 API 文件）
+- **詳細規格**: [docs/API.md](./docs/API.md)（完整的 Request/Response 範例）
 
 ## 常見問題
 
@@ -207,9 +223,10 @@ docker images | grep refactor-base
 
 ### Agent 執行失敗？
 
-1. 檢查 `ANTHROPIC_API_KEY` 是否正確設定
+1. 檢查容器內 AI Server 的 LLM API Key 設定
 2. 查看容器日誌：`docker logs refactor-project-{project_id}`
 3. 檢查 API 日誌：`docker-compose logs -f api`
+4. 查看 Agent 執行日誌：使用 SSE stream 端點
 
 ### 如何清理測試資料？
 

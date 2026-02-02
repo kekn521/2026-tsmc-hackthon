@@ -34,13 +34,46 @@ class ContainerService:
         self,
         project_id: str,
         image: str = None,
+        dev_mode: Optional[bool] = None,
         **kwargs
     ) -> Dict[str, Any]:
-        """建立容器（Agent 程式碼已烤進 base image）"""
+        """建立容器
+
+        Args:
+            project_id: 專案 ID
+            image: Docker 映像名稱
+            dev_mode: 開發模式覆蓋 (None=使用全域設定)
+        """
         if image is None:
             image = settings.docker_base_image
 
+        # 決定是否啟用開發模式
+        use_dev_mode = dev_mode if dev_mode is not None else settings.dev_mode
+
         try:
+            # 準備專案工作區目錄
+            project_dir = f"{settings.docker_volume_prefix}/{project_id}"
+            os.makedirs(f"{project_dir}/repo", exist_ok=True)
+            os.makedirs(f"{project_dir}/artifacts", exist_ok=True)
+
+            # 準備 volume mounts
+            volume_args = [
+                "-v", f"{project_dir}/repo:/workspace/repo",
+                "-v", f"{project_dir}/artifacts:/workspace/artifacts"
+            ]
+
+            # 開發模式：掛載 agent 程式碼
+            if use_dev_mode:
+                if not settings.agent_host_path:
+                    raise ValueError("DEV_MODE 啟用但 AGENT_HOST_PATH 未設定")
+
+                volume_args.extend([
+                    "-v", f"{settings.agent_host_path}:/workspace/agent:ro"  # 唯讀掛載
+                ])
+                logger.info(f"🔧 開發模式：掛載 agent 從 {settings.agent_host_path}")
+            else:
+                logger.info("📦 生產模式：使用 image 內建的 agent")
+
             # 準備環境變數
             env_vars = []
             # 傳遞 ANTHROPIC_API_KEY（如果有設定）
@@ -48,7 +81,6 @@ class ContainerService:
                 env_vars.extend(["-e", f"ANTHROPIC_API_KEY={settings.anthropic_api_key}"])
 
             # 建立容器
-            # 分別掛載 repo 和 artifacts，保留 image 中的 agent 目錄
             cmd = [
                 "docker", "create",
                 "--name", f"refactor-project-{project_id}",
@@ -57,6 +89,7 @@ class ContainerService:
                 "-i",  # stdin_open
                 "--memory", settings.container_memory_limit,
                 "--cpus", str(settings.container_cpu_limit),
+                *volume_args,  # 加入 volume 參數
                 *env_vars,  # 加入環境變數
                 image
             ]
@@ -69,7 +102,10 @@ class ContainerService:
             )
 
             container_id = result.stdout.strip()
-            logger.info(f"建立容器: {container_id} (Agent 已內建於 image)")
+            logger.info(
+                f"建立容器: {container_id} "
+                f"(dev_mode={use_dev_mode})"
+            )
             return {"id": container_id}
         except subprocess.CalledProcessError as e:
             logger.error(f"建立容器失敗: {e.stderr}")

@@ -2,6 +2,9 @@ FROM python:3.11-alpine
 
 RUN apk add --no-cache git build-base libffi-dev openssl-dev
 
+# 設定環境變數：確保 Python 輸出不被緩衝
+ENV PYTHONUNBUFFERED=1
+
 # 設定工作目錄為 /workspace（RefactorAgent 的 root_dir）
 WORKDIR /workspace
 
