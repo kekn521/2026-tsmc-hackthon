@@ -170,9 +170,13 @@ function LogLine({ event }: { event: AgentLogEvent }) {
       break
   }
 
-  // 特殊處理 tool_calls, token_usage, response_metadata
+  // 特殊處理 tool_calls, tools_execution, token_usage, response_metadata
   if (type === 'tool_calls' || type === 'tool_call') {
     return <ToolCallsDisplay event={event} />
+  }
+
+  if (type === 'tools_execution' || type === 'tool_result') {
+    return <ToolResultsDisplay event={event} />
   }
 
   if (type === 'token_usage') {
@@ -266,6 +270,114 @@ function ToolCallsDisplay({ event }: { event: AgentLogEvent }) {
                     </summary>
                     <pre className="text-xs bg-gray-800 p-2 rounded mt-1 overflow-x-auto border border-gray-700 text-gray-300">
                       {JSON.stringify(args, null, 2)}
+                    </pre>
+                  </details>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Tool Results 專用顯示組件（執行結果）
+ */
+function ToolResultsDisplay({ event }: { event: AgentLogEvent }) {
+  const { timestamp, content, results } = event
+
+  // 提取 results 陣列
+  const execResults = results || content?.results || (Array.isArray(content) ? content : [])
+
+  if (!execResults || execResults.length === 0) {
+    return (
+      <div className="bg-cyan-950/20 border-l-2 border-cyan-500 mb-2 py-2 px-3 rounded">
+        <div className="text-cyan-400 flex items-start gap-2">
+          <span className="flex-shrink-0 text-base mt-0.5">✅</span>
+          <div className="flex-1">
+            {timestamp && (
+              <div className="text-xs text-gray-500 mb-1 font-sans">
+                {new Date(timestamp).toLocaleTimeString('zh-TW')}
+              </div>
+            )}
+            <span className="font-sans text-gray-400">工具執行結果（無詳細資訊）</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-cyan-950/20 border-l-2 border-cyan-500 mb-2 py-2 px-3 rounded">
+      <div className="text-cyan-400">
+        <div className="flex items-start gap-2 mb-2">
+          <span className="flex-shrink-0 text-base mt-0.5">✅</span>
+          <div className="flex-1">
+            {timestamp && (
+              <div className="text-xs text-gray-500 mb-1 font-sans">
+                {new Date(timestamp).toLocaleTimeString('zh-TW')}
+              </div>
+            )}
+            <div className="font-semibold font-sans">工具執行結果 ({execResults.length})</div>
+          </div>
+        </div>
+
+        <div className="ml-7 space-y-3">
+          {execResults.map((result: any, idx: number) => {
+            const toolName = result.name || result.tool_name || '未知工具'
+            const resultContent = result.content || result.output || result.result || ''
+            const toolCallId = result.tool_call_id || result.id
+            const contentLength = result.content_length
+
+            return (
+              <div key={idx} className="bg-cyan-900/30 rounded p-3 font-sans text-sm">
+                {/* 工具名稱和 ID */}
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-cyan-300 font-mono font-semibold">{toolName}</span>
+                  {toolCallId && (
+                    <span className="text-xs text-gray-500 font-mono">[{toolCallId.slice(0, 12)}]</span>
+                  )}
+                  {contentLength && (
+                    <span className="text-xs text-gray-500">({contentLength} 字元)</span>
+                  )}
+                </div>
+
+                {/* 結果內容 */}
+                {resultContent && (
+                  <div className="bg-gray-900/50 rounded p-2 mt-2">
+                    {typeof resultContent === 'string' ? (
+                      resultContent.length > 500 ? (
+                        <details className="cursor-pointer">
+                          <summary className="text-gray-400 hover:text-gray-300 text-xs mb-2">
+                            內容預覽（點擊展開完整內容）
+                          </summary>
+                          <pre className="text-xs text-gray-300 whitespace-pre-wrap break-words">
+                            {resultContent}
+                          </pre>
+                        </details>
+                      ) : (
+                        <pre className="text-xs text-gray-300 whitespace-pre-wrap break-words">
+                          {resultContent}
+                        </pre>
+                      )
+                    ) : (
+                      <pre className="text-xs text-gray-300 overflow-x-auto">
+                        {JSON.stringify(resultContent, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                )}
+
+                {/* 如果有其他欄位，提供查看選項 */}
+                {Object.keys(result).length > 4 && (
+                  <details className="cursor-pointer mt-2">
+                    <summary className="text-xs text-gray-500 hover:text-gray-400">
+                      查看完整數據
+                    </summary>
+                    <pre className="text-xs bg-gray-800 p-2 rounded mt-1 overflow-x-auto border border-gray-700 text-gray-300">
+                      {JSON.stringify(result, null, 2)}
                     </pre>
                   </details>
                 )}
