@@ -254,6 +254,17 @@ function ToolCallsDisplay({ event }: { event: AgentLogEvent }) {
     )
   }
 
+  // 檢查是否有 write_todos 調用
+  const writeTodosCall = calls.find((call: any) => {
+    const toolName = call.name || call.function?.name || call.tool_name || ''
+    return toolName === 'write_todos'
+  })
+
+  // 如果有 write_todos，顯示特別的 UI
+  if (writeTodosCall) {
+    return <WriteTodosCallDisplay event={event} call={writeTodosCall} allCalls={calls} />
+  }
+
   return (
     <div className="bg-blue-950/20 border-l-2 border-blue-500 mb-2 py-2 px-3 rounded">
       <div className="text-blue-400">
@@ -303,6 +314,82 @@ function ToolCallsDisplay({ event }: { event: AgentLogEvent }) {
 }
 
 /**
+ * write_todos 專用顯示組件（調用時）
+ */
+function WriteTodosCallDisplay({ event, call, allCalls }: { event: AgentLogEvent; call: any; allCalls: any[] }) {
+  const { timestamp } = event
+  const args = call.args || call.function?.arguments || call.arguments || {}
+  const todos = args.todos || []
+
+  return (
+    <div className="bg-purple-950/20 border-l-2 border-purple-500 mb-2 py-2 px-3 rounded">
+      <div className="text-purple-400">
+        <div className="flex items-start gap-2 mb-3">
+          <span className="flex-shrink-0 text-base mt-0.5">📝</span>
+          <div className="flex-1">
+            {timestamp && (
+              <div className="text-xs text-gray-500 mb-1 font-sans">
+                {new Date(timestamp).toLocaleTimeString('zh-TW')}
+              </div>
+            )}
+            <div className="font-semibold font-sans flex items-center gap-2">
+              <span>正在寫入 TODO 列表</span>
+              <span className="inline-block w-2 h-2 bg-purple-400 rounded-full animate-pulse"></span>
+            </div>
+          </div>
+        </div>
+
+        {todos.length > 0 && (
+          <div className="ml-7 space-y-2">
+            <div className="text-xs text-purple-300 font-sans mb-2">
+              準備寫入 {todos.length} 個任務
+            </div>
+            {todos.map((todo: any, idx: number) => {
+              const task = todo.task || todo.title || todo.description || `任務 #${idx + 1}`
+              const status = todo.status || 'pending'
+
+              return (
+                <div key={idx} className="bg-purple-900/30 rounded p-2 font-sans text-sm flex items-start gap-2">
+                  <span className="text-purple-300 flex-shrink-0">•</span>
+                  <div className="flex-1">
+                    <div className="text-gray-200">{task}</div>
+                    <div className="text-xs text-gray-500 mt-1">狀態: {status}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* 顯示其他工具調用 */}
+        {allCalls.length > 1 && (
+          <details className="cursor-pointer mt-3 ml-7">
+            <summary className="text-xs text-gray-500 hover:text-gray-400 font-sans">
+              其他工具調用 ({allCalls.length - 1} 個)
+            </summary>
+            <div className="mt-2 space-y-1">
+              {allCalls
+                .filter((c: any) => {
+                  const name = c.name || c.function?.name || c.tool_name || ''
+                  return name !== 'write_todos'
+                })
+                .map((c: any, idx: number) => {
+                  const name = c.name || c.function?.name || c.tool_name || '未知'
+                  return (
+                    <div key={idx} className="text-xs text-gray-400 font-mono">
+                      • {name}
+                    </div>
+                  )
+                })}
+            </div>
+          </details>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
  * Tool Results 專用顯示組件（執行結果）
  */
 function ToolResultsDisplay({ event }: { event: AgentLogEvent }) {
@@ -327,6 +414,17 @@ function ToolResultsDisplay({ event }: { event: AgentLogEvent }) {
         </div>
       </div>
     )
+  }
+
+  // 檢查是否有 write_todos 的結果
+  const writeTodosResult = execResults.find((result: any) => {
+    const toolName = result.name || result.tool_name || ''
+    return toolName === 'write_todos'
+  })
+
+  // 如果有 write_todos 結果，顯示特別的 UI
+  if (writeTodosResult) {
+    return <WriteTodosResultDisplay event={event} result={writeTodosResult} allResults={execResults} />
   }
 
   return (
@@ -405,6 +503,129 @@ function ToolResultsDisplay({ event }: { event: AgentLogEvent }) {
             )
           })}
         </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * write_todos 結果專用顯示組件
+ */
+function WriteTodosResultDisplay({ event, result, allResults }: { event: AgentLogEvent; result: any; allResults: any[] }) {
+  const { timestamp } = event
+  const resultContent = result.content || result.output || result.result || ''
+
+  // 嘗試從結果中提取 todos
+  let todos: any[] = []
+  try {
+    // 結果可能是 JSON 字串或純文字
+    if (typeof resultContent === 'string') {
+      // 嘗試解析 JSON
+      if (resultContent.trim().startsWith('{') || resultContent.trim().startsWith('[')) {
+        const parsed = JSON.parse(resultContent)
+        todos = parsed.todos || (Array.isArray(parsed) ? parsed : [])
+      }
+    } else if (typeof resultContent === 'object') {
+      todos = resultContent.todos || (Array.isArray(resultContent) ? resultContent : [])
+    }
+  } catch (e) {
+    // 解析失敗，忽略
+  }
+
+  return (
+    <div className="bg-purple-950/20 border-l-2 border-purple-500 mb-2 py-2 px-3 rounded">
+      <div className="text-purple-400">
+        <div className="flex items-start gap-2 mb-3">
+          <span className="flex-shrink-0 text-base mt-0.5">✅</span>
+          <div className="flex-1">
+            {timestamp && (
+              <div className="text-xs text-gray-500 mb-1 font-sans">
+                {new Date(timestamp).toLocaleTimeString('zh-TW')}
+              </div>
+            )}
+            <div className="font-semibold font-sans text-green-400">
+              ✓ TODO 列表已成功寫入
+            </div>
+          </div>
+        </div>
+
+        {/* 顯示寫入的 TODOs */}
+        {todos.length > 0 ? (
+          <div className="ml-7 space-y-2">
+            <div className="text-xs text-purple-300 font-sans mb-2">
+              已寫入 {todos.length} 個任務
+            </div>
+            {todos.map((todo: any, idx: number) => {
+              const task = todo.task || todo.title || todo.description || `任務 #${idx + 1}`
+              const status = todo.status || 'pending'
+
+              let statusIcon = '○'
+              let statusColor = 'text-yellow-400'
+
+              switch (status.toLowerCase()) {
+                case 'completed':
+                case 'done':
+                  statusIcon = '✓'
+                  statusColor = 'text-green-400'
+                  break
+                case 'in_progress':
+                case 'running':
+                  statusIcon = '▶'
+                  statusColor = 'text-blue-400'
+                  break
+                case 'blocked':
+                  statusIcon = '✖'
+                  statusColor = 'text-red-400'
+                  break
+              }
+
+              return (
+                <div key={idx} className="bg-purple-900/30 rounded p-2 font-sans text-sm flex items-start gap-2">
+                  <span className={`${statusColor} flex-shrink-0 font-bold`}>{statusIcon}</span>
+                  <div className="flex-1">
+                    <div className="text-gray-200">{task}</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {status} {todo.priority && `• ${todo.priority} priority`}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          // 如果無法解析 todos，顯示原始內容
+          <div className="ml-7">
+            <div className="bg-purple-900/30 rounded p-3 font-sans text-sm">
+              <pre className="text-xs text-gray-300 whitespace-pre-wrap break-words">
+                {typeof resultContent === 'string' ? resultContent : JSON.stringify(resultContent, null, 2)}
+              </pre>
+            </div>
+          </div>
+        )}
+
+        {/* 顯示其他工具結果 */}
+        {allResults.length > 1 && (
+          <details className="cursor-pointer mt-3 ml-7">
+            <summary className="text-xs text-gray-500 hover:text-gray-400 font-sans">
+              其他工具結果 ({allResults.length - 1} 個)
+            </summary>
+            <div className="mt-2 space-y-1">
+              {allResults
+                .filter((r: any) => {
+                  const name = r.name || r.tool_name || ''
+                  return name !== 'write_todos'
+                })
+                .map((r: any, idx: number) => {
+                  const name = r.name || r.tool_name || '未知'
+                  return (
+                    <div key={idx} className="text-xs text-gray-400 font-mono">
+                      • {name}
+                    </div>
+                  )
+                })}
+            </div>
+          </details>
+        )}
       </div>
     </div>
   )
