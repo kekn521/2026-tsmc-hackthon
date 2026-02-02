@@ -161,31 +161,31 @@ async def list_tasks():
     return {"total": len(tasks), "tasks": list(tasks.values())}
 
 
-@app.post("/clone")
-async def clone_repo(request: CloneRequest):
-    """在容器內 clone Git repo"""
-    import subprocess
-    try:
-        log_message = f"開始 clone {request.repo_url} (branch: {request.branch})"
-        logger.info(log_message)
+# @app.post("/clone")
+# async def clone_repo(request: CloneRequest):
+#     """在容器內 clone Git repo"""
+#     import subprocess
+#     try:
+#         log_message = f"開始 clone {request.repo_url} (branch: {request.branch})"
+#         logger.info(log_message)
 
-        # 清空並 clone repo
-        subprocess.run(["rm", "-rf", "/workspace/repo"], check=True)
-        subprocess.run(["mkdir", "-p", "/workspace/repo"], check=True)
-        subprocess.run([
-            "git", "clone",
-            "-b", request.branch,
-            "--depth", "1",
-            request.repo_url,
-            "/workspace/repo"
-        ], check=True, capture_output=True, text=True)
+#         # 清空並 clone repo
+#         subprocess.run(["rm", "-rf", "/workspace/repo"], check=True)
+#         subprocess.run(["mkdir", "-p", "/workspace/repo"], check=True)
+#         subprocess.run([
+#             "git", "clone",
+#             "-b", request.branch,
+#             "--depth", "1",
+#             request.repo_url,
+#             "/workspace/repo"
+#         ], check=True, capture_output=True, text=True)
 
-        logger.info(f"Successfully cloned {request.repo_url}")
-        return {"status": "success", "message": "Repository cloned successfully"}
-    except subprocess.CalledProcessError as e:
-        error_msg = f"Git clone failed: {e.stderr}"
-        logger.error(error_msg)
-        raise HTTPException(status_code=500, detail=error_msg)
+#         logger.info(f"Successfully cloned {request.repo_url}")
+#         return {"status": "success", "message": "Repository cloned successfully"}
+#     except subprocess.CalledProcessError as e:
+#         error_msg = f"Git clone failed: {e.stderr}"
+#         logger.error(error_msg)
+#         raise HTTPException(status_code=500, detail=error_msg)
 
 
 @app.get("/tasks/{task_id}/stream")
