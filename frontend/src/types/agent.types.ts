@@ -44,13 +44,14 @@ export interface AgentRunListResponse {
 export interface AgentLogEvent {
   timestamp?: string
   type: 'llm_response' | 'ai_content' | 'tool_call' | 'tool_calls' | 'tool_result' | 'tools_execution' |
-        'thinking' | 'log' | 'status' | 'token_usage' | 'response_metadata' | 'event' | 'message'
+        'thinking' | 'log' | 'status' | 'token_usage' | 'response_metadata' | 'todo_update' | 'event' | 'message'
   message?: string
   event_type?: string
   content?: any
   results?: any[]
   tool_calls?: ToolCall[]
   metadata?: any
+  todos?: TodoItem[]
 }
 
 export interface ToolCall {
@@ -73,4 +74,15 @@ export interface TokenUsage {
   completion_tokens?: number
   cache_creation_input_tokens?: number
   cache_read_input_tokens?: number
+}
+
+export interface TodoItem {
+  id?: string
+  task?: string
+  title?: string
+  description?: string
+  status?: 'pending' | 'in_progress' | 'completed' | 'blocked' | string
+  priority?: 'low' | 'medium' | 'high' | string
+  created_at?: string
+  updated_at?: string
 }

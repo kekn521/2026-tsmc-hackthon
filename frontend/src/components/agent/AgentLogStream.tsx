@@ -14,8 +14,10 @@ export function AgentLogStream({ projectId, runId, autoStart = true }: Props) {
   const [logs, setLogs] = useState<AgentLogEvent[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [autoScroll, setAutoScroll] = useState(false) // 預設不自動滾動，方便 debug
   const cancelStreamRef = useRef<(() => void) | null>(null)
   const logsEndRef = useRef<HTMLDivElement>(null)
+  const logsContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (autoStart) {
@@ -27,9 +29,11 @@ export function AgentLogStream({ projectId, runId, autoStart = true }: Props) {
   }, [runId, autoStart])
 
   useEffect(() => {
-    // 自動捲動到底部
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [logs])
+    // 只在啟用自動滾動時才滾動到底部
+    if (autoScroll && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [logs, autoScroll])
 
   const startStream = async () => {
     setIsStreaming(true)
@@ -81,6 +85,14 @@ export function AgentLogStream({ projectId, runId, autoStart = true }: Props) {
         </div>
 
         <div className="flex gap-2">
+          <Button
+            onClick={() => setAutoScroll(!autoScroll)}
+            variant={autoScroll ? "default" : "outline"}
+            size="sm"
+            title={autoScroll ? "關閉自動滾動" : "啟用自動滾動"}
+          >
+            {autoScroll ? "📍 自動滾動" : "🔒 固定視窗"}
+          </Button>
           {isStreaming ? (
             <Button onClick={stopStream} variant="destructive" size="sm">
               停止串流
@@ -99,7 +111,11 @@ export function AgentLogStream({ projectId, runId, autoStart = true }: Props) {
         </div>
       )}
 
-      <div className="bg-gray-900 text-gray-100 p-4 rounded font-mono text-sm h-96 overflow-y-auto">
+      <div
+        ref={logsContainerRef}
+        className="bg-gray-900 text-gray-100 p-4 rounded font-mono text-sm h-96 overflow-y-auto scroll-smooth"
+        style={{ scrollBehavior: 'smooth' }}
+      >
         {logs.length === 0 ? (
           <div className="text-gray-500 text-center py-8">
             {isStreaming ? '等待日誌...' : '點擊「開始串流」查看日誌'}
@@ -170,7 +186,7 @@ function LogLine({ event }: { event: AgentLogEvent }) {
       break
   }
 
-  // 特殊處理 tool_calls, tools_execution, token_usage, response_metadata
+  // 特殊處理 tool_calls, tools_execution, token_usage, response_metadata, todo_update
   if (type === 'tool_calls' || type === 'tool_call') {
     return <ToolCallsDisplay event={event} />
   }
@@ -187,11 +203,15 @@ function LogLine({ event }: { event: AgentLogEvent }) {
     return <ResponseMetadataDisplay event={event} />
   }
 
+  if (type === 'todo_update') {
+    return <TodosDisplay event={event} />
+  }
+
   // 智能格式化內容
   const displayContent = formatLogContent(message, content, results, type)
 
   return (
-    <div className={`${bgColor} ${borderColor} mb-2 py-2 px-3 rounded hover:bg-opacity-100 transition-colors`}>
+    <div className={`${bgColor} ${borderColor} mb-2 py-2 px-3 rounded hover:bg-opacity-100 transition-all duration-200 ease-in-out`}>
       <div className={`${color} flex items-start gap-2`}>
         <span className="flex-shrink-0 text-base mt-0.5">{icon}</span>
         <div className="flex-1 min-w-0 overflow-hidden">
@@ -573,6 +593,183 @@ function ResponseMetadataDisplay({ event }: { event: AgentLogEvent }) {
             </details>
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * TODOs 專用顯示組件
+ */
+function TodosDisplay({ event }: { event: AgentLogEvent }) {
+  const { timestamp, content } = event
+
+  // Debug: 記錄收到的數據
+  console.log('[TodosDisplay] event:', event)
+  console.log('[TodosDisplay] content:', content)
+
+  // 如果完全沒有數據，顯示錯誤訊息
+  if (!content) {
+    return (
+      <div className="bg-purple-950/20 border-l-2 border-purple-500 mb-2 py-2 px-3 rounded">
+        <div className="text-purple-400 flex items-start gap-2">
+          <span className="flex-shrink-0 text-base mt-0.5">📝</span>
+          <div className="flex-1 font-sans text-sm">
+            ⚠️ TODO 更新事件無內容數據
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // 提取 todos 列表
+  const todos = content?.todos || []
+
+  if (!todos || todos.length === 0) {
+    // 顯示原始數據
+    return <RawDataDisplay event={event} icon="📝" color="text-purple-400" bgColor="bg-purple-950/20" borderColor="border-purple-500" />
+  }
+
+  return (
+    <div className="bg-purple-950/20 border-l-2 border-purple-500 mb-2 py-2 px-3 rounded">
+      <div className="text-purple-400">
+        <div className="flex items-start gap-2 mb-3">
+          <span className="flex-shrink-0 text-base mt-0.5">📝</span>
+          <div className="flex-1">
+            {timestamp && (
+              <div className="text-xs text-gray-500 mb-1 font-sans">
+                {new Date(timestamp).toLocaleTimeString('zh-TW')}
+              </div>
+            )}
+            <div className="font-semibold font-sans">TODO 列表更新 ({todos.length})</div>
+          </div>
+        </div>
+
+        <div className="ml-7 space-y-2">
+          {todos.map((todo: any, idx: number) => {
+            const task = todo.task || todo.title || todo.description || `任務 #${idx + 1}`
+            const status = todo.status || 'pending'
+            const priority = todo.priority
+            const todoId = todo.id
+
+            // 狀態樣式
+            let statusColor = 'text-gray-400'
+            let statusBg = 'bg-gray-800'
+            let statusIcon = '○'
+
+            switch (status.toLowerCase()) {
+              case 'completed':
+              case 'done':
+                statusColor = 'text-green-400'
+                statusBg = 'bg-green-900/30'
+                statusIcon = '✓'
+                break
+              case 'in_progress':
+              case 'running':
+                statusColor = 'text-blue-400'
+                statusBg = 'bg-blue-900/30'
+                statusIcon = '▶'
+                break
+              case 'blocked':
+                statusColor = 'text-red-400'
+                statusBg = 'bg-red-900/30'
+                statusIcon = '✖'
+                break
+              case 'pending':
+              default:
+                statusColor = 'text-yellow-400'
+                statusBg = 'bg-yellow-900/30'
+                statusIcon = '○'
+                break
+            }
+
+            // 優先級樣式
+            let priorityColor = 'text-gray-500'
+            let priorityIcon = ''
+
+            if (priority) {
+              switch (priority.toLowerCase()) {
+                case 'high':
+                  priorityColor = 'text-red-400'
+                  priorityIcon = '🔥'
+                  break
+                case 'medium':
+                  priorityColor = 'text-orange-400'
+                  priorityIcon = '⚡'
+                  break
+                case 'low':
+                  priorityColor = 'text-blue-400'
+                  priorityIcon = '💤'
+                  break
+              }
+            }
+
+            return (
+              <div key={idx} className={`${statusBg} rounded p-3 font-sans text-sm transition-all duration-200 ease-in-out hover:bg-opacity-100 hover:scale-[1.01]`}>
+                <div className="flex items-start gap-3">
+                  {/* 狀態圖示 */}
+                  <span className={`${statusColor} font-bold text-base flex-shrink-0 mt-0.5`}>
+                    {statusIcon}
+                  </span>
+
+                  <div className="flex-1 min-w-0">
+                    {/* 任務標題 */}
+                    <div className="flex items-start gap-2 mb-1">
+                      <span className="text-gray-200 font-medium break-words flex-1">{task}</span>
+                      {priority && (
+                        <span className={`${priorityColor} text-xs flex-shrink-0`}>
+                          {priorityIcon} {priority.toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* 狀態和 ID */}
+                    <div className="flex items-center gap-3 text-xs">
+                      <span className={`${statusColor} font-mono`}>{status}</span>
+                      {todoId && (
+                        <span className="text-gray-600 font-mono">#{todoId.slice(0, 8)}</span>
+                      )}
+                    </div>
+
+                    {/* 額外描述 */}
+                    {todo.description && todo.description !== task && (
+                      <div className="mt-2 text-xs text-gray-400 border-l-2 border-gray-700 pl-2">
+                        {todo.description}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* 摘要統計 */}
+        <div className="mt-3 ml-7 flex items-center gap-4 text-xs font-sans">
+          <span className="text-gray-500">
+            總計: <span className="text-purple-300 font-semibold">{todos.length}</span>
+          </span>
+          <span className="text-gray-500">
+            完成: <span className="text-green-400 font-semibold">
+              {todos.filter((t: any) => ['completed', 'done'].includes(t.status?.toLowerCase())).length}
+            </span>
+          </span>
+          <span className="text-gray-500">
+            進行中: <span className="text-blue-400 font-semibold">
+              {todos.filter((t: any) => ['in_progress', 'running'].includes(t.status?.toLowerCase())).length}
+            </span>
+          </span>
+        </div>
+
+        {/* 查看完整數據 */}
+        <details className="cursor-pointer mt-3 ml-7">
+          <summary className="text-xs text-gray-500 hover:text-gray-400 font-sans">
+            查看完整數據
+          </summary>
+          <pre className="text-xs bg-gray-800 p-2 rounded mt-1 overflow-x-auto border border-gray-700 text-gray-300">
+            {JSON.stringify(content, null, 2)}
+          </pre>
+        </details>
       </div>
     </div>
   )

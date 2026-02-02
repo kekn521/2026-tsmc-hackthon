@@ -266,7 +266,7 @@ class ChunkParser:
 
     def _parse_middleware_chunk(self, chunk: dict) -> None:
         """解析 middleware chunk
-        
+
         Middleware chunks 通常包含:
         - TodoListMiddleware.after_model
         - SummarizationMiddleware.before_model
@@ -276,13 +276,18 @@ class ChunkParser:
             if value is None:
                 # 空值的 middleware event，靜默跳過
                 continue
-            
+
             # 提取 middleware 名稱和事件類型
             if '.' in key:
                 middleware_name, event_type = key.rsplit('.', 1)
             else:
                 middleware_name, event_type = key, 'unknown'
-            
+
+            # 特殊處理 TodoListMiddleware
+            if 'TodoListMiddleware' in middleware_name:
+                self._handle_todo_update(value)
+                # 繼續顯示 verbose 輸出
+
             if self.verbose:
                 print(f"\n{'─'*60}")
                 print(f"⚙️  [{middleware_name}] {event_type}")
@@ -292,6 +297,36 @@ class ChunkParser:
                 else:
                     print(str(value))
                 print(f"{'─'*60}\n")
+
+    def _handle_todo_update(self, value: any) -> None:
+        """處理 TodoList 更新事件
+
+        Args:
+            value: TodoListMiddleware 的值，可能包含 todos 列表
+        """
+        if not self.event_callback:
+            return
+
+        # 嘗試提取 todos 資訊
+        todos = None
+
+        if isinstance(value, dict):
+            # 檢查各種可能的欄位名稱
+            todos = value.get('todos') or value.get('tasks') or value.get('todo_list')
+
+            # 如果沒有明確的 todos 欄位，但有看起來像 todo 的結構，直接使用整個 value
+            if not todos and any(k in value for k in ['status', 'task', 'title', 'id']):
+                todos = [value]
+        elif isinstance(value, list):
+            # 直接是 todos 列表
+            todos = value
+
+        # 發送 todo_update 事件
+        if todos:
+            self.event_callback("todo_update", {"todos": todos})
+        else:
+            # 發送原始數據
+            self.event_callback("todo_update", {"raw": value})
 
     def print_summary(self) -> None:
         """顯示總結資訊"""
