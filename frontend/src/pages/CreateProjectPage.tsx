@@ -13,6 +13,47 @@ export default function CreateProjectPage() {
   const [initPrompt, setInitPrompt] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [urlWarning, setUrlWarning] = useState('')
+  const [suggestedUrl, setSuggestedUrl] = useState('')
+
+  /**
+   * 驗證並修正 Git repository URL
+   */
+  const validateAndFixUrl = (url: string) => {
+    setUrlWarning('')
+    setSuggestedUrl('')
+
+    if (!url) return
+
+    // 檢測常見錯誤：GitHub 網頁 URL
+    if (url.includes('/tree/') || url.includes('/blob/') || url.includes('?tab=')) {
+      const match = url.match(/https?:\/\/github\.com\/([^\/]+)\/([^\/\?]+)/)
+      if (match) {
+        const [, owner, repo] = match
+        const correctedUrl = `https://github.com/${owner}/${repo}.git`
+        setUrlWarning('⚠️ 您輸入的是 GitHub 網頁 URL，而不是 Git repository URL')
+        setSuggestedUrl(correctedUrl)
+      }
+    }
+    // 檢測 GitHub URL 但缺少 .git
+    else if (url.match(/^https?:\/\/github\.com\/[^\/]+\/[^\/]+$/) && !url.endsWith('.git')) {
+      setUrlWarning('💡 建議在 GitHub URL 後加上 .git 後綴')
+      setSuggestedUrl(`${url}.git`)
+    }
+  }
+
+  const handleUrlChange = (value: string) => {
+    setRepoUrl(value)
+    validateAndFixUrl(value)
+  }
+
+  const handleUseSuggestedUrl = () => {
+    if (suggestedUrl) {
+      setRepoUrl(suggestedUrl)
+      setUrlWarning('')
+      setSuggestedUrl('')
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -63,12 +104,45 @@ export default function CreateProjectPage() {
                 <Input
                   placeholder="https://github.com/username/repo.git"
                   value={repoUrl}
-                  onChange={(e) => setRepoUrl(e.target.value)}
+                  onChange={(e) => handleUrlChange(e.target.value)}
                   required
+                  className={urlWarning ? 'border-yellow-500' : ''}
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   支援 HTTPS 和 SSH 格式的 Git repository URL
                 </p>
+
+                {/* URL 警告和建議 */}
+                {urlWarning && (
+                  <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm">
+                    <p className="text-yellow-800 mb-2">{urlWarning}</p>
+                    {suggestedUrl && (
+                      <div className="space-y-2">
+                        <p className="font-mono text-xs text-yellow-900 bg-yellow-100 p-2 rounded">
+                          建議使用：{suggestedUrl}
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleUseSuggestedUrl}
+                          className="text-yellow-700 border-yellow-300 hover:bg-yellow-100"
+                        >
+                          使用建議的 URL
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 範例說明 */}
+                <div className="mt-2 text-xs text-gray-600">
+                  <p className="font-medium mb-1">正確格式範例：</p>
+                  <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li className="font-mono">https://github.com/username/repo.git</li>
+                    <li className="font-mono">git@github.com:username/repo.git</li>
+                  </ul>
+                </div>
               </div>
 
               <div>

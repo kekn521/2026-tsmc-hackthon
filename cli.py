@@ -548,7 +548,7 @@ async def interactive_mode():
 
     print("""
 ╔══════════════════════════════════════════════════════════╗
-║     AI 舊程式碼智能重構系統 - CLI 工具                  ║
+║     AI 舊程式碼智能重構系統 - CLI 工具                       ║
 ╚══════════════════════════════════════════════════════════╝
     """)
 
@@ -647,7 +647,7 @@ async def create_new_project(cli: RefactorCLI) -> Optional[str]:
 
     # 預設測試專案
     DEFAULT_NAME = "測試專案"
-    DEFAULT_REPO = "https://github.com/octocat/Hello-World.git"
+    DEFAULT_REPO = "https://github.com/emilybache/Racing-Car-Katas.git"
     DEFAULT_BRANCH = "main"
     DEFAULT_PROMPT = "分析此專案並生成重構計劃，請專注在 /Python 的資料夾，我想要把裡面的python 轉成 go lang，並存入 ./memory/plan.md 檔案，不需要使用者確認後就直接執行所有的計劃，把它完整重構完成"
 

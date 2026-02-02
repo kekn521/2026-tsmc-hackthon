@@ -29,6 +29,7 @@ class UpdateProjectRequest(BaseModel):
     branch: Optional[str] = None
     init_prompt: Optional[str] = None
     status: Optional[ProjectStatus] = None
+    container_id: Optional[str] = None
 
 
 class ProjectResponse(BaseModel):

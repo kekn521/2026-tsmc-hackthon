@@ -8,6 +8,7 @@ export enum AgentRunStatus {
   RUNNING = 'RUNNING',
   DONE = 'DONE',
   FAILED = 'FAILED',
+  STOPPED = 'STOPPED',
 }
 
 export interface AgentRun {
@@ -38,4 +39,16 @@ export interface AgentRunDetail {
 export interface AgentRunListResponse {
   total: number
   runs: AgentRunDetail[]
+}
+
+export interface AgentLogEvent {
+  timestamp?: string
+  type: 'llm_response' | 'ai_content' | 'tool_call' | 'tool_calls' | 'tool_result' | 'tools_execution' |
+        'thinking' | 'log' | 'status' | 'token_usage' | 'response_metadata' | 'event' | 'message'
+  message?: string
+  event_type?: string
+  content?: any
+  results?: any[]
+  tool_calls?: any[]
+  metadata?: any
 }

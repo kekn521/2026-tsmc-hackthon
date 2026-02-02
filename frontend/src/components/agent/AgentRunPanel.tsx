@@ -9,9 +9,10 @@ import { AgentRunHistory } from './AgentRunHistory'
 interface AgentRunPanelProps {
   projectId: string
   projectStatus: string
+  onActiveRunChange?: (runId: string | null) => void
 }
 
-export function AgentRunPanel({ projectId, projectStatus }: AgentRunPanelProps) {
+export function AgentRunPanel({ projectId, projectStatus, onActiveRunChange }: AgentRunPanelProps) {
   const [runs, setRuns] = useState<AgentRunDetail[]>([])
   const [activeRun, setActiveRun] = useState<AgentRunDetail | null>(null)
   const [loading, setLoading] = useState(false)
@@ -38,10 +39,12 @@ export function AgentRunPanel({ projectId, projectStatus }: AgentRunPanelProps) 
       const running = data.runs.find((r) => r.status === 'RUNNING')
       if (running) {
         setActiveRun(running)
+        onActiveRunChange?.(running.id)
       } else if (activeRun?.status === 'RUNNING') {
         // 之前的 run 完成了，重新載入
         const updated = data.runs.find((r) => r.id === activeRun.id)
         setActiveRun(updated || null)
+        onActiveRunChange?.(updated?.id || null)
       }
     } catch (error) {
       console.error('載入 Agent Runs 失敗', error)

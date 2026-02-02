@@ -55,17 +55,17 @@ async def login(
     """
     用戶登入
 
-    驗證 email 和密碼，返回 JWT access token。
+    驗證 username 和密碼，返回 JWT access token。
     """
     user = await auth_service.authenticate_user(
-        email=request.email,
+        username=request.username,
         password=request.password
     )
 
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

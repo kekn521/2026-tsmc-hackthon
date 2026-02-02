@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,7 +8,7 @@ import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card'
 export default function LoginPage() {
   const navigate = useNavigate()
   const { login } = useAuth()
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -18,7 +18,7 @@ export default function LoginPage() {
     try {
       setLoading(true)
       setError('')
-      await login({ email, password })
+      await login(username, password)
       navigate('/projects')
     } catch (err: any) {
       setError(err.response?.data?.detail || '登入失敗')
@@ -39,12 +39,12 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">Email</label>
+              <label className="block text-sm font-medium mb-2">使用者名稱</label>
               <Input
-                type="email"
-                placeholder="your@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                type="text"
+                placeholder="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 required
               />
             </div>
@@ -66,8 +66,16 @@ export default function LoginPage() {
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? '登入中...' : '登入'}
             </Button>
+
+            <div className="text-center text-sm">
+              沒有帳號？{' '}
+              <Link to="/register" className="text-blue-600 hover:underline">
+                註冊
+              </Link>
+            </div>
+
             <div className="text-center text-sm text-gray-600 mt-4">
-              測試帳號: quan@example.com / quan12345
+              測試帳號: quan / quan12345
             </div>
           </form>
         </CardContent>

@@ -1,9 +1,8 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   getProjectAPI,
   provisionProjectAPI,
-  execCommandAPI,
   stopProjectAPI,
   deleteProjectAPI,
   updateProjectAPI,
@@ -14,8 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import type { Project } from '@/types/project.types'
-import { AgentRunPanel } from '@/components/agent/AgentRunPanel'
-import { cn } from '@/lib/utils'
+import { RefactorControl } from '@/components/refactor/RefactorControl'
 
 const statusColors: Record<string, 'default' | 'secondary' | 'destructive' | 'success' | 'warning'> = {
   CREATED: 'secondary',
@@ -26,19 +24,11 @@ const statusColors: Record<string, 'default' | 'secondary' | 'destructive' | 'su
   FAILED: 'destructive',
 }
 
-interface LogEntry {
-  text: string
-  isAgent: boolean
-}
-
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [project, setProject] = useState<Project | null>(null)
-  const [logs, setLogs] = useState<LogEntry[]>([])
-  const [command, setCommand] = useState('')
   const [loading, setLoading] = useState(true)
   const [executing, setExecuting] = useState(false)
-  const logsEndRef = useRef<HTMLDivElement>(null)
 
   // 編輯相關狀態
   const [isEditing, setIsEditing] = useState(false)
@@ -47,23 +37,14 @@ export default function ProjectDetailPage() {
     branch: '',
     init_prompt: '',
   })
+  const [urlWarning, setUrlWarning] = useState('')
+  const [suggestedUrl, setSuggestedUrl] = useState('')
 
   useEffect(() => {
     if (id) {
       loadProject()
     }
   }, [id])
-
-  useEffect(() => {
-    if (project?.container_id) {
-      setupLogStream()
-    }
-  }, [project?.container_id])
-
-  useEffect(() => {
-    // 自動捲動到日誌底部
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [logs])
 
   const loadProject = async () => {
     try {
@@ -76,42 +57,45 @@ export default function ProjectDetailPage() {
     }
   }
 
-  const setupLogStream = () => {
-    // EventSource 不支援自訂 Header，這裡使用 query parameter 傳遞 token
-    // 注意：這不是最佳實踐，生產環境應該使用其他方案
-    const eventSource = new EventSource(
-      `${import.meta.env.VITE_API_BASE_URL}/api/v1/projects/${id}/logs/stream?follow=true&tail=50`,
-      // 由於 EventSource 不支援自訂 headers，我們需要在後端支援從 query 參數讀取 token
-      // 或者使用 fetch + ReadableStream 的方式
-    )
+  /**
+   * 驗證並修正 Git repository URL
+   */
+  const validateAndFixUrl = (url: string) => {
+    setUrlWarning('')
+    setSuggestedUrl('')
 
-    eventSource.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data)
-        if (data.line) {
-          const isAgentLog = data.line.includes('[AGENT-CONTAINER]')
-          setLogs((prev) => [
-            ...prev,
-            {
-              text: data.line,
-              isAgent: isAgentLog,
-            },
-          ])
-        }
-      } catch (error) {
-        console.error('解析日誌失敗', error)
+    if (!url) return
+
+    // 檢測常見錯誤：GitHub 網頁 URL
+    if (url.includes('/tree/') || url.includes('/blob/') || url.includes('?tab=')) {
+      const match = url.match(/https?:\/\/github\.com\/([^\/]+)\/([^\/\?]+)/)
+      if (match) {
+        const [, owner, repo] = match
+        const correctedUrl = `https://github.com/${owner}/${repo}.git`
+        setUrlWarning('⚠️ 您輸入的是 GitHub 網頁 URL，而不是 Git repository URL')
+        setSuggestedUrl(correctedUrl)
       }
     }
-
-    eventSource.onerror = (error) => {
-      console.error('SSE 連接錯誤', error)
-      eventSource.close()
-    }
-
-    return () => {
-      eventSource.close()
+    // 檢測 GitHub URL 但缺少 .git
+    else if (url.match(/^https?:\/\/github\.com\/[^\/]+\/[^\/]+$/) && !url.endsWith('.git')) {
+      setUrlWarning('💡 建議在 GitHub URL 後加上 .git 後綴')
+      setSuggestedUrl(`${url}.git`)
     }
   }
+
+  const handleUrlChange = (value: string) => {
+    setEditForm({ ...editForm, repo_url: value })
+    validateAndFixUrl(value)
+  }
+
+  const handleUseSuggestedUrl = () => {
+    if (suggestedUrl) {
+      setEditForm({ ...editForm, repo_url: suggestedUrl })
+      setUrlWarning('')
+      setSuggestedUrl('')
+    }
+  }
+
 
   const handleProvision = async () => {
     try {
@@ -120,26 +104,6 @@ export default function ProjectDetailPage() {
       await loadProject()
     } catch (error: any) {
       alert(error.response?.data?.detail || 'Provision 失敗')
-    } finally {
-      setExecuting(false)
-    }
-  }
-
-  const handleExecCommand = async () => {
-    if (!command.trim()) return
-
-    try {
-      setExecuting(true)
-      const result = await execCommandAPI(id!, { command })
-      const newLogs: LogEntry[] = [
-        { text: `$ ${command}`, isAgent: false },
-        result.stdout && { text: result.stdout, isAgent: false },
-        result.stderr && { text: result.stderr, isAgent: false },
-      ].filter((log): log is LogEntry => Boolean(log && log.text))
-      setLogs((prev) => [...prev, ...newLogs])
-      setCommand('')
-    } catch (error: any) {
-      alert(error.response?.data?.detail || '執行指令失敗')
     } finally {
       setExecuting(false)
     }
@@ -306,9 +270,33 @@ export default function ProjectDetailPage() {
                     <Input
                       placeholder="https://github.com/user/repo.git"
                       value={editForm.repo_url}
-                      onChange={(e) => setEditForm({ ...editForm, repo_url: e.target.value })}
+                      onChange={(e) => handleUrlChange(e.target.value)}
                       disabled={project.status !== 'CREATED'}
+                      className={urlWarning ? 'border-yellow-500' : ''}
                     />
+
+                    {/* URL 警告和建議 */}
+                    {urlWarning && project.status === 'CREATED' && (
+                      <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm">
+                        <p className="text-yellow-800 mb-2">{urlWarning}</p>
+                        {suggestedUrl && (
+                          <div className="space-y-2">
+                            <p className="font-mono text-xs text-yellow-900 bg-yellow-100 p-2 rounded">
+                              建議使用：{suggestedUrl}
+                            </p>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={handleUseSuggestedUrl}
+                              className="text-yellow-700 border-yellow-300 hover:bg-yellow-100"
+                            >
+                              使用建議的 URL
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -345,65 +333,13 @@ export default function ProjectDetailPage() {
           </CardContent>
         </Card>
 
-        {/* AI Agent 自動分析 */}
+        {/* AI 自動重構 */}
         {project.status === 'READY' && (
-          <AgentRunPanel projectId={id!} projectStatus={project.status} />
-        )}
-
-        {/* 執行指令 */}
-        {project.status === 'READY' && (
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>執行指令</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="輸入指令..."
-                  value={command}
-                  onChange={(e) => setCommand(e.target.value)}
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' && !executing) {
-                      handleExecCommand()
-                    }
-                  }}
-                  disabled={executing}
-                />
-                <Button onClick={handleExecCommand} disabled={executing}>
-                  執行
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* 容器日誌 */}
-        {project.container_id && (
-          <Card>
-            <CardHeader>
-              <CardTitle>容器日誌</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="bg-black text-green-400 p-4 rounded h-96 overflow-auto font-mono text-sm">
-                {logs.length === 0 ? (
-                  <div className="text-gray-500">等待日誌輸出...</div>
-                ) : (
-                  logs.map((log, index) => (
-                    <div
-                      key={index}
-                      className={cn(
-                        'whitespace-pre-wrap',
-                        log.isAgent ? 'text-blue-400 font-semibold' : 'text-green-400'
-                      )}
-                    >
-                      {log.text}
-                    </div>
-                  ))
-                )}
-                <div ref={logsEndRef} />
-              </div>
-            </CardContent>
-          </Card>
+          <RefactorControl
+            projectId={id!}
+            projectStatus={project.status}
+            onProjectUpdate={loadProject}
+          />
         )}
       </div>
     </div>

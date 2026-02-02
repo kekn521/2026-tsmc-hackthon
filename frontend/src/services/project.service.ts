@@ -39,3 +39,8 @@ export const stopProjectAPI = async (id: string): Promise<Project> => {
 export const deleteProjectAPI = async (id: string): Promise<void> => {
   await api.delete(`/api/v1/projects/${id}`)
 }
+
+export const reprovisionProjectAPI = async (id: string): Promise<Project> => {
+  const response = await api.post(`/api/v1/projects/${id}/reprovision`)
+  return response.data
+}

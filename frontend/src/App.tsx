@@ -3,6 +3,7 @@ import { AuthProvider } from '@/contexts/AuthContext'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
 
 import LoginPage from '@/pages/LoginPage'
+import RegisterPage from '@/pages/RegisterPage'
 import ProjectsPage from '@/pages/ProjectsPage'
 import CreateProjectPage from '@/pages/CreateProjectPage'
 import ProjectDetailPage from '@/pages/ProjectDetailPage'
@@ -14,6 +15,7 @@ function App() {
         <Routes>
           {/* 公開路由 */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
 
           {/* 受保護的路由 */}
           <Route element={<ProtectedRoute />}>

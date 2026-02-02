@@ -1,5 +1,6 @@
 import { api } from './api'
-import type { AgentRun, AgentRunDetail, AgentRunListResponse } from '@/types/agent.types'
+import { getToken } from '@/utils/token'
+import type { AgentRun, AgentRunDetail, AgentRunListResponse, AgentLogEvent } from '@/types/agent.types'
 
 /**
  * 啟動 Agent Run
@@ -40,4 +41,125 @@ export const downloadPlanMdAPI = (projectId: string, runId: string): string => {
  */
 export const downloadPlanJsonAPI = (projectId: string, runId: string): string => {
   return `${import.meta.env.VITE_API_BASE_URL}/api/v1/projects/${projectId}/agent/runs/${runId}/artifacts/plan.json`
+}
+
+/**
+ * 停止 Agent Run
+ */
+export const stopAgentRunAPI = async (projectId: string, runId: string): Promise<any> => {
+  const response = await api.post(`/api/v1/projects/${projectId}/agent/runs/${runId}/stop`)
+  return response.data
+}
+
+/**
+ * 繼續 Agent Run（會建立新的 run）
+ */
+export const resumeAgentRunAPI = async (projectId: string, runId: string): Promise<any> => {
+  const response = await api.post(`/api/v1/projects/${projectId}/agent/runs/${runId}/resume`)
+  return response.data
+}
+
+/**
+ * 串流 Agent Run 日誌（SSE）
+ * 使用 fetch + ReadableStream 以支援 Bearer token
+ *
+ * @param projectId 專案 ID
+ * @param runId Agent Run ID
+ * @param onMessage 收到事件時的回調函數
+ * @param onError 錯誤處理回調函數
+ * @returns 返回取消串流的函數
+ */
+export const streamAgentLogsAPI = async (
+  projectId: string,
+  runId: string,
+  onMessage: (event: AgentLogEvent) => void,
+  onError?: (error: Error) => void
+): Promise<() => void> => {
+  const token = getToken()
+  if (!token) {
+    throw new Error('未登入')
+  }
+
+  const url = `${import.meta.env.VITE_API_BASE_URL}/api/v1/projects/${projectId}/agent/runs/${runId}/stream`
+
+  const abortController = new AbortController()
+
+  fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    signal: abortController.signal,
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const reader = response.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let currentEvent = 'message' // SSE 預設事件類型
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+
+        // 保留最後一行（可能不完整）
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          const trimmedLine = line.trim()
+
+          // 跳過空行和 ping 事件
+          if (!trimmedLine || trimmedLine === ': ping') continue
+
+          // 處理外層的 data: 包裝
+          if (trimmedLine.startsWith('data:')) {
+            const innerContent = trimmedLine.slice(5).trim()
+
+            // 處理內層的 event: 或 data: 行
+            if (innerContent.startsWith('event:')) {
+              // 提取事件類型
+              currentEvent = innerContent.slice(6).trim()
+            } else if (innerContent.startsWith('data:')) {
+              // 提取實際數據
+              const dataStr = innerContent.slice(5).trim()
+              if (dataStr) {
+                try {
+                  const data = JSON.parse(dataStr)
+
+                  // 組合事件類型和數據
+                  onMessage({
+                    type: currentEvent as any,
+                    ...data
+                  })
+
+                  // 重置事件類型
+                  currentEvent = 'message'
+                } catch (e) {
+                  console.warn('解析 SSE 資料失敗', e, dataStr)
+                }
+              }
+            }
+          } else if (trimmedLine.startsWith('event:')) {
+            // 直接的 event: 行（無外層包裝）
+            currentEvent = trimmedLine.slice(6).trim()
+          } else if (trimmedLine === '') {
+            // 空行表示事件結束，重置狀態
+            currentEvent = 'message'
+          }
+        }
+      }
+    })
+    .catch((error) => {
+      if (error.name !== 'AbortError') {
+        onError?.(error)
+      }
+    })
+
+  // 返回取消函數
+  return () => abortController.abort()
 }

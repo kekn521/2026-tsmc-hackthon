@@ -76,12 +76,17 @@ class AuthService:
         建立新用戶
 
         Raises:
-            ValueError: Email 已存在
+            ValueError: Email 或 Username 已存在
         """
         # 檢查 email 是否已存在
         existing_user = await self.users_collection.find_one({"email": email})
         if existing_user:
             raise ValueError("Email already registered")
+
+        # 檢查 username 是否已存在
+        existing_username = await self.users_collection.find_one({"username": username})
+        if existing_username:
+            raise ValueError("Username already taken")
 
         # 建立用戶
         password_hash = self.hash_password(password)
@@ -99,14 +104,14 @@ class AuthService:
 
         return User(**user_data)
 
-    async def authenticate_user(self, email: str, password: str) -> Optional[User]:
+    async def authenticate_user(self, username: str, password: str) -> Optional[User]:
         """
-        驗證用戶登入
+        驗證用戶登入（使用 username）
 
         Returns:
             User object if authentication successful, None otherwise
         """
-        user_doc = await self.users_collection.find_one({"email": email})
+        user_doc = await self.users_collection.find_one({"username": username})
         if not user_doc:
             return None
 

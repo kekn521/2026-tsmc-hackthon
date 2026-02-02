@@ -1,12 +1,12 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { loginAPI, getMeAPI } from '@/services/auth.service'
 import { getToken, setToken, removeToken } from '@/utils/token'
-import type { User, LoginRequest } from '@/types/auth.types'
+import type { User } from '@/types/auth.types'
 
 interface AuthContextType {
   user: User | null
   loading: boolean
-  login: (credentials: LoginRequest) => Promise<void>
+  login: (username: string, password: string) => Promise<void>
   logout: () => void
   isAuthenticated: boolean
 }
@@ -33,8 +33,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initAuth()
   }, [])
 
-  const login = async (credentials: LoginRequest) => {
-    const { access_token } = await loginAPI(credentials)
+  const login = async (username: string, password: string) => {
+    const { access_token } = await loginAPI({ username, password })
     setToken(access_token)
     const userData = await getMeAPI()
     setUser(userData)

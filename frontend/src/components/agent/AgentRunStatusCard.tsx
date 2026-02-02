@@ -82,18 +82,43 @@ export function AgentRunStatusCard({ run, projectId }: AgentRunStatusCardProps) 
       {/* 狀態訊息 */}
       <div className="text-sm text-muted-foreground">
         {isRunning && `AI 正在${phaseLabels[run.phase]}...`}
-        {isDone && '✅ 分析完成！'}
-        {isFailed && (
-          <span className="text-red-600">❌ 執行失敗：{run.error_message}</span>
-        )}
       </div>
 
-      {/* 下載按鈕 */}
+      {/* 執行完成橫幅 */}
       {isDone && (
-        <Button onClick={handleDownload} variant="outline" size="sm" className="w-full">
-          <Download className="w-4 h-4 mr-2" />
-          下載分析結果
-        </Button>
+        <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
+          <div className="flex items-start gap-2">
+            <span className="text-2xl">✅</span>
+            <div className="flex-1">
+              <h4 className="font-semibold text-green-800">執行完成！</h4>
+              <p className="text-sm text-green-700 mt-1">
+                分析結果已生成，可下載查看重構計劃。
+              </p>
+              {run.artifacts_path && (
+                <p className="text-xs text-green-600 mt-2 font-mono">
+                  📁 Artifacts: {run.artifacts_path}
+                </p>
+              )}
+              <Button onClick={handleDownload} variant="outline" size="sm" className="mt-3">
+                <Download className="w-4 h-4 mr-2" />
+                下載分析結果
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 執行失敗橫幅 */}
+      {isFailed && (
+        <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-start gap-2">
+            <span className="text-2xl">❌</span>
+            <div className="flex-1">
+              <h4 className="font-semibold text-red-800">執行失敗</h4>
+              <p className="text-sm text-red-700 mt-1">{run.error_message}</p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

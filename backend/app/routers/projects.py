@@ -1,6 +1,7 @@
 """專案路由"""
+import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pymongo.asynchronous.database import AsyncDatabase
 
 from ..database.mongodb import get_database
@@ -21,6 +22,7 @@ from ..services.log_service import LogService
 from sse_starlette.sse import EventSourceResponse
 
 router = APIRouter(prefix="/api/v1/projects", tags=["projects"])
+logger = logging.getLogger(__name__)
 
 
 async def get_project_service(
@@ -292,6 +294,53 @@ async def stop_project(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"停止專案失敗: {str(e)}",
+        )
+
+
+@router.post("/{project_id}/reprovision", response_model=ProjectResponse)
+async def reprovision_project(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    service: ProjectService = Depends(get_project_service),
+    current_user: User = Depends(get_current_user),
+):
+    """重設專案（刪除容器並重新 provision）"""
+    # 驗證所有權
+    project = await service.get_project_by_id(project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="專案不存在"
+        )
+    if project.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="無權限操作此專案"
+        )
+
+    try:
+        # 先停止並刪除現有容器（如果存在）
+        if project.container_id:
+            container_service = ContainerService()
+            container_service.stop_container(project.container_id)
+            container_service.remove_container(project.container_id)
+
+            # 清除容器 ID 並重設狀態
+            await service.update_project(
+                project_id,
+                UpdateProjectRequest(
+                    container_id=None,
+                    status=ProjectStatus.CREATED
+                )
+            )
+
+        # 重新 provision
+        updated_project = await service.provision_project(project_id)
+        return ProjectResponse(**updated_project.model_dump(by_alias=True))
+
+    except Exception as e:
+        logger.error(f"重設專案失敗: project_id={project_id}, error={str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"重設專案失敗: {str(e)}",
         )
 
 

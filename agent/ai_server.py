@@ -27,6 +27,7 @@ class TaskStatus:
     RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
+    STOPPED = "stopped"  # 手動停止
 
 # 內存任務儲存（單容器內有效）
 tasks: Dict[str, Dict] = {}
@@ -259,7 +260,7 @@ async def stream_task_logs(task_id: str):
                 last_index = len(current_logs)
 
             # 如果任務完成，發送完成事件並結束
-            if task["status"] in [TaskStatus.SUCCESS, TaskStatus.FAILED]:
+            if task["status"] in [TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.STOPPED]:
                 yield {
                     "event": "status",
                     "data": json_lib.dumps({
@@ -273,3 +274,89 @@ async def stream_task_logs(task_id: str):
             await asyncio.sleep(0.5)  # 每 0.5 秒檢查一次（更即時）
 
     return EventSourceResponse(event_generator())
+
+
+@app.post("/tasks/{task_id}/stop")
+async def stop_task(task_id: str):
+    """停止執行中的任務
+
+    注意：由於 Agent 在背景執行且無法中斷，
+    這裡只是將狀態標記為 STOPPED，實際執行可能仍在進行。
+    """
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task = tasks[task_id]
+
+    # 只能停止 PENDING 或 RUNNING 的任務
+    if task["status"] not in [TaskStatus.PENDING, TaskStatus.RUNNING]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot stop task with status: {task['status']}"
+        )
+
+    # 標記為已停止
+    task["status"] = TaskStatus.STOPPED
+    task["finished_at"] = datetime.utcnow().isoformat()
+    task["error_message"] = "Task stopped by user"
+
+    log_task(task_id, "⏹️  任務已被用戶停止")
+    logger.info(f"[{task_id}] Task stopped by user")
+
+    return {
+        "task_id": task_id,
+        "status": TaskStatus.STOPPED,
+        "message": "Task has been stopped"
+    }
+
+
+@app.post("/tasks/{task_id}/resume")
+async def resume_task(task_id: str, background_tasks: BackgroundTasks):
+    """繼續執行已停止的任務
+
+    實際上會使用原始的 init_prompt 重新啟動一個新的任務。
+    """
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    old_task = tasks[task_id]
+
+    # 只能繼續 STOPPED 或 FAILED 的任務
+    if old_task["status"] not in [TaskStatus.STOPPED, TaskStatus.FAILED]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot resume task with status: {old_task['status']}"
+        )
+
+    # 使用原始 init_prompt 建立新任務
+    new_task_id = str(uuid.uuid4())
+    init_prompt = old_task["init_prompt"]
+
+    tasks[new_task_id] = {
+        "task_id": new_task_id,
+        "status": TaskStatus.PENDING,
+        "init_prompt": init_prompt,
+        "created_at": datetime.utcnow().isoformat(),
+        "started_at": None,
+        "finished_at": None,
+        "error_message": None,
+        "resumed_from": task_id  # 記錄從哪個任務恢復
+    }
+
+    # 啟動背景任務
+    background_tasks.add_task(
+        execute_agent,
+        task_id=new_task_id,
+        init_prompt=init_prompt,
+        verbose=True
+    )
+
+    logger.info(f"[{new_task_id}] Task resumed from [{task_id}]")
+    log_task(new_task_id, f"▶️  從任務 {task_id} 恢復執行")
+
+    return {
+        "task_id": new_task_id,
+        "old_task_id": task_id,
+        "status": TaskStatus.PENDING,
+        "message": "Task resumed with new task_id"
+    }

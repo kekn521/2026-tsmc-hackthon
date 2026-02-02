@@ -232,3 +232,79 @@ async def stream_agent_logs(
             yield f"event: error\ndata: {error_msg}\n\n"
 
     return EventSourceResponse(event_generator())
+
+
+@router.post("/{project_id}/agent/runs/{run_id}/stop")
+async def stop_agent_run(
+    project_id: str,
+    run_id: str,
+    project_service: ProjectService = Depends(get_project_service),
+    current_user: User = Depends(get_current_user),
+):
+    """停止執行中的 Agent Run"""
+    # 驗證專案權限
+    project = await project_service.get_project_by_id(project_id)
+    if not project or project.owner_id != current_user.id:
+        raise HTTPException(status_code=404, detail="專案不存在或無權限")
+
+    container_name = f"refactor-project-{project_id}"
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.post(
+                f"http://{container_name}:8000/tasks/{run_id}/stop"
+            )
+            response.raise_for_status()
+            result = response.json()
+
+        logger.info(f"Agent Run 已停止: project={project_id}, run_id={run_id}")
+        return result
+
+    except httpx.HTTPError as e:
+        logger.error(f"停止 Agent Run 失敗: {e}")
+        raise HTTPException(status_code=503, detail=f"AI Server 錯誤: {str(e)}")
+
+
+@router.post("/{project_id}/agent/runs/{run_id}/resume")
+async def resume_agent_run(
+    project_id: str,
+    run_id: str,
+    project_service: ProjectService = Depends(get_project_service),
+    current_user: User = Depends(get_current_user),
+):
+    """繼續執行已停止的 Agent Run
+
+    會使用原始 init_prompt 重新啟動一個新的任務。
+    """
+    # 驗證專案權限
+    project = await project_service.get_project_by_id(project_id)
+    if not project or project.owner_id != current_user.id:
+        raise HTTPException(status_code=404, detail="專案不存在或無權限")
+
+    container_name = f"refactor-project-{project_id}"
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"http://{container_name}:8000/tasks/{run_id}/resume"
+            )
+            response.raise_for_status()
+            result = response.json()
+
+        logger.info(f"Agent Run 已恢復: project={project_id}, old_run_id={run_id}, new_run_id={result['task_id']}")
+
+        # 轉換為前端期望格式
+        return {
+            "run_id": result["task_id"],
+            "old_run_id": result["old_task_id"],
+            "project_id": project_id,
+            "status": "RUNNING",
+            "iteration_index": 0,
+            "phase": "plan",
+            "created_at": "",
+            "message": "Agent 任務已恢復，正在背景執行"
+        }
+
+    except httpx.HTTPError as e:
+        logger.error(f"恢復 Agent Run 失敗: {e}")
+        raise HTTPException(status_code=503, detail=f"AI Server 錯誤: {str(e)}")

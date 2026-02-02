@@ -21,13 +21,13 @@ class UserRegisterRequest(BaseModel):
 
 class UserLoginRequest(BaseModel):
     """用戶登入請求"""
-    email: EmailStr
+    username: str
     password: str
 
     class Config:
         json_schema_extra = {
             "example": {
-                "email": "user@example.com",
+                "username": "testuser",
                 "password": "password123"
             }
         }
