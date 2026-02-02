@@ -49,6 +49,28 @@ export interface AgentLogEvent {
   event_type?: string
   content?: any
   results?: any[]
-  tool_calls?: any[]
+  tool_calls?: ToolCall[]
   metadata?: any
+}
+
+export interface ToolCall {
+  id?: string
+  name?: string
+  tool_name?: string
+  args?: Record<string, any>
+  arguments?: Record<string, any>
+  function?: {
+    name: string
+    arguments: Record<string, any>
+  }
+}
+
+export interface TokenUsage {
+  input_tokens?: number
+  output_tokens?: number
+  total_tokens?: number
+  prompt_tokens?: number
+  completion_tokens?: number
+  cache_creation_input_tokens?: number
+  cache_read_input_tokens?: number
 }

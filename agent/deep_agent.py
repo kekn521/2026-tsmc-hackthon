@@ -32,7 +32,7 @@ class RefactorAgent:
         """
         self.model = model
         self.verbose = verbose
-        self.root_dir = "/workspace/"  # 改為絕對路徑，確保容器內正確存取
+        self.root_dir = "/workspace/"
         self._agent_init()
 
     def _agent_init(self):

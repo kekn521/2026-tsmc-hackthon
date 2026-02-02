@@ -99,6 +99,7 @@ export const streamAgentLogsAPI = async (
       const decoder = new TextDecoder()
       let buffer = ''
       let currentEvent = 'message' // SSE 預設事件類型
+      let currentData = ''
 
       while (true) {
         const { done, value } = await reader.read()
@@ -113,43 +114,35 @@ export const streamAgentLogsAPI = async (
         for (const line of lines) {
           const trimmedLine = line.trim()
 
-          // 跳過空行和 ping 事件
-          if (!trimmedLine || trimmedLine === ': ping') continue
+          // 跳過註釋
+          if (trimmedLine.startsWith(':')) continue
 
-          // 處理外層的 data: 包裝
-          if (trimmedLine.startsWith('data:')) {
-            const innerContent = trimmedLine.slice(5).trim()
-
-            // 處理內層的 event: 或 data: 行
-            if (innerContent.startsWith('event:')) {
-              // 提取事件類型
-              currentEvent = innerContent.slice(6).trim()
-            } else if (innerContent.startsWith('data:')) {
-              // 提取實際數據
-              const dataStr = innerContent.slice(5).trim()
-              if (dataStr) {
-                try {
-                  const data = JSON.parse(dataStr)
-
-                  // 組合事件類型和數據
-                  onMessage({
-                    type: currentEvent as any,
-                    ...data
-                  })
-
-                  // 重置事件類型
-                  currentEvent = 'message'
-                } catch (e) {
-                  console.warn('解析 SSE 資料失敗', e, dataStr)
-                }
+          // 空行表示事件結束
+          if (trimmedLine === '') {
+            if (currentData) {
+              try {
+                const data = JSON.parse(currentData)
+                onMessage({
+                  type: currentEvent as any,
+                  ...data
+                })
+              } catch (e) {
+                console.warn('解析 SSE 資料失敗', e, currentData)
               }
+              // 重置狀態
+              currentEvent = 'message'
+              currentData = ''
             }
-          } else if (trimmedLine.startsWith('event:')) {
-            // 直接的 event: 行（無外層包裝）
+            continue
+          }
+
+          // 解析 event: 行
+          if (trimmedLine.startsWith('event:')) {
             currentEvent = trimmedLine.slice(6).trim()
-          } else if (trimmedLine === '') {
-            // 空行表示事件結束，重置狀態
-            currentEvent = 'message'
+          }
+          // 解析 data: 行
+          else if (trimmedLine.startsWith('data:')) {
+            currentData = trimmedLine.slice(5).trim()
           }
         }
       }

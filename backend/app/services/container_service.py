@@ -220,6 +220,15 @@ class ContainerService:
     ) -> Dict[str, Any]:
         """在容器中 clone repository"""
         try:
+            # 先清除目標目錄（如果存在）
+            logger.info(f"清理目標目錄: {target_dir}")
+            cleanup_cmd = f"rm -rf {target_dir}"
+            subprocess.run(
+                ["docker", "exec", "-w", "/workspace", container_id, "sh", "-c", cleanup_cmd],
+                capture_output=True,
+                text=True
+            )
+
             # 執行 git clone 指令
             clone_cmd = f"git clone --branch {branch} --depth {settings.git_depth} {repo_url} {target_dir}"
 

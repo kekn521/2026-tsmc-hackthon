@@ -106,7 +106,8 @@ async def list_agent_runs(
             "pending": "RUNNING",
             "running": "RUNNING",
             "success": "DONE",
-            "failed": "FAILED"
+            "failed": "FAILED",
+            "stopped": "STOPPED"
         }
 
         runs = []
@@ -162,7 +163,8 @@ async def get_agent_run_detail(
             "pending": "RUNNING",
             "running": "RUNNING",
             "success": "DONE",
-            "failed": "FAILED"
+            "failed": "FAILED",
+            "stopped": "STOPPED"
         }
 
         return {
@@ -198,7 +200,7 @@ async def stream_agent_logs(
     container_name = f"refactor-project-{project_id}"
 
     async def event_generator():
-        """轉發容器的 SSE stream"""
+        """解析並轉發容器的 SSE stream（避免雙層包裝）"""
         try:
             url = f"http://{container_name}:8000/tasks/{run_id}/stream"
             logger.info(f"🔗 開始串流 AI Server 日誌: {url}")
@@ -210,12 +212,34 @@ async def stream_agent_logs(
                     print(f"✅ [DEBUG] SSE 連線已建立，狀態碼: {response.status_code}", flush=True)
 
                     line_count = 0
+                    current_event = None
+                    current_data = None
+
                     async for line in response.aiter_lines():
-                        if line:
-                            line_count += 1
-                            logger.debug(f"[SSE #{line_count}] {line}")
-                            print(f"📨 [DEBUG] 收到 SSE 訊息 #{line_count}: {line[:100]}", flush=True)
-                            yield line + "\n"
+                        line_count += 1
+                        stripped = line.strip()
+
+                        # 跳過空行和註釋
+                        if not stripped or stripped.startswith(':'):
+                            # 空行表示事件結束，發送累積的事件
+                            if current_data is not None:
+                                yield {
+                                    "event": current_event or "message",
+                                    "data": current_data
+                                }
+                                current_event = None
+                                current_data = None
+                            continue
+
+                        # 解析 event: 行
+                        if stripped.startswith('event:'):
+                            current_event = stripped[6:].strip()
+                            logger.debug(f"[SSE #{line_count}] event: {current_event}")
+                        # 解析 data: 行
+                        elif stripped.startswith('data:'):
+                            current_data = stripped[5:].strip()
+                            logger.debug(f"[SSE #{line_count}] data: {current_data[:100]}")
+                            print(f"📨 [DEBUG] 收到 SSE 訊息 #{line_count}: event={current_event}, data={current_data[:100]}", flush=True)
 
             logger.info(f"✅ SSE 串流正常結束: run_id={run_id}, 共 {line_count} 行")
             print(f"✅ [DEBUG] SSE 串流正常結束: {line_count} 行", flush=True)
@@ -224,12 +248,12 @@ async def stream_agent_logs(
             error_msg = f"HTTP 錯誤: {str(e)}"
             logger.error(f"❌ {error_msg}")
             print(f"❌ [DEBUG] {error_msg}", flush=True)
-            yield f"event: error\ndata: {error_msg}\n\n"
+            yield {"event": "error", "data": error_msg}
         except Exception as e:
             error_msg = f"Stream 轉發失敗: {str(e)}"
             logger.error(f"❌ {error_msg}")
             print(f"❌ [DEBUG] {error_msg}", flush=True)
-            yield f"event: error\ndata: {error_msg}\n\n"
+            yield {"event": "error", "data": error_msg}
 
     return EventSourceResponse(event_generator())
 

@@ -237,8 +237,16 @@ class ProjectService:
 
             # 建立主機目錄結構
             import os
+            import shutil
             from ..config import settings
             project_dir = f"{settings.docker_volume_prefix}/{project_id}"
+
+            # 清理舊的 repo 目錄（如果存在）
+            repo_dir = f"{project_dir}/repo"
+            if os.path.exists(repo_dir):
+                logger.info(f"清理舊的 repo 目錄: {repo_dir}")
+                shutil.rmtree(repo_dir)
+
             os.makedirs(f"{project_dir}/repo", exist_ok=True)
             os.makedirs(f"{project_dir}/artifacts", exist_ok=True)
             logger.info(f"建立專案目錄: {project_dir}")

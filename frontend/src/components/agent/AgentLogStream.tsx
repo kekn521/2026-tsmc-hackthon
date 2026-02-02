@@ -170,6 +170,15 @@ function LogLine({ event }: { event: AgentLogEvent }) {
       break
   }
 
+  // 特殊處理 tool_calls 和 token_usage
+  if (type === 'tool_calls' || type === 'tool_call') {
+    return <ToolCallsDisplay event={event} />
+  }
+
+  if (type === 'token_usage') {
+    return <TokenUsageDisplay event={event} />
+  }
+
   // 智能格式化內容
   const displayContent = formatLogContent(message, content, results, type)
 
@@ -184,6 +193,143 @@ function LogLine({ event }: { event: AgentLogEvent }) {
             </div>
           )}
           <div className="break-words whitespace-pre-wrap">{displayContent}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Tool Calls 專用顯示組件
+ */
+function ToolCallsDisplay({ event }: { event: AgentLogEvent }) {
+  const { timestamp, content, tool_calls } = event
+
+  // 提取 tool_calls 陣列
+  const calls = tool_calls || content?.tool_calls || (Array.isArray(content) ? content : [])
+
+  if (!calls || calls.length === 0) {
+    return (
+      <div className="bg-blue-950/20 border-l-2 border-blue-500 mb-2 py-2 px-3 rounded">
+        <div className="text-blue-400 flex items-start gap-2">
+          <span className="flex-shrink-0 text-base mt-0.5">🔧</span>
+          <div className="flex-1">
+            {timestamp && (
+              <div className="text-xs text-gray-500 mb-1 font-sans">
+                {new Date(timestamp).toLocaleTimeString('zh-TW')}
+              </div>
+            )}
+            <span className="font-sans text-gray-400">工具調用（無詳細資訊）</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-blue-950/20 border-l-2 border-blue-500 mb-2 py-2 px-3 rounded">
+      <div className="text-blue-400">
+        <div className="flex items-start gap-2 mb-2">
+          <span className="flex-shrink-0 text-base mt-0.5">🔧</span>
+          <div className="flex-1">
+            {timestamp && (
+              <div className="text-xs text-gray-500 mb-1 font-sans">
+                {new Date(timestamp).toLocaleTimeString('zh-TW')}
+              </div>
+            )}
+            <div className="font-semibold font-sans">工具調用 ({calls.length})</div>
+          </div>
+        </div>
+
+        <div className="ml-7 space-y-2">
+          {calls.map((call: any, idx: number) => {
+            const toolName = call.name || call.function?.name || call.tool_name || '未知工具'
+            const args = call.args || call.function?.arguments || call.arguments || {}
+
+            return (
+              <div key={idx} className="bg-blue-900/30 rounded p-2 font-sans text-sm">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-blue-300 font-mono font-semibold">{toolName}</span>
+                  {call.id && (
+                    <span className="text-xs text-gray-500 font-mono">[{call.id.slice(0, 8)}]</span>
+                  )}
+                </div>
+
+                {Object.keys(args).length > 0 && (
+                  <details className="cursor-pointer mt-1">
+                    <summary className="text-gray-400 hover:text-gray-300 text-xs">
+                      參數 ({Object.keys(args).length} 個)
+                    </summary>
+                    <pre className="text-xs bg-gray-800 p-2 rounded mt-1 overflow-x-auto border border-gray-700 text-gray-300">
+                      {JSON.stringify(args, null, 2)}
+                    </pre>
+                  </details>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Token Usage 專用顯示組件
+ */
+function TokenUsageDisplay({ event }: { event: AgentLogEvent }) {
+  const { timestamp, content } = event
+
+  // 提取 token 使用資訊
+  const usage = content?.usage || content
+
+  if (!usage) {
+    return null
+  }
+
+  const inputTokens = usage.input_tokens || usage.prompt_tokens || 0
+  const outputTokens = usage.output_tokens || usage.completion_tokens || 0
+  const totalTokens = usage.total_tokens || inputTokens + outputTokens
+
+  return (
+    <div className="bg-yellow-950/10 border-l-2 border-yellow-500 mb-2 py-2 px-3 rounded">
+      <div className="text-yellow-300">
+        <div className="flex items-start gap-2">
+          <span className="flex-shrink-0 text-base mt-0.5">🔢</span>
+          <div className="flex-1">
+            {timestamp && (
+              <div className="text-xs text-gray-500 mb-1 font-sans">
+                {new Date(timestamp).toLocaleTimeString('zh-TW')}
+              </div>
+            )}
+
+            <div className="flex items-center gap-4 font-sans text-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400">輸入:</span>
+                <span className="font-mono font-semibold">{inputTokens.toLocaleString()}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400">輸出:</span>
+                <span className="font-mono font-semibold">{outputTokens.toLocaleString()}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400">總計:</span>
+                <span className="font-mono font-semibold text-yellow-200">{totalTokens.toLocaleString()}</span>
+              </div>
+            </div>
+
+            {/* 顯示其他 metadata */}
+            {usage.cache_creation_input_tokens && (
+              <div className="text-xs text-gray-500 mt-1 font-sans">
+                快取建立: {usage.cache_creation_input_tokens.toLocaleString()} tokens
+              </div>
+            )}
+            {usage.cache_read_input_tokens && (
+              <div className="text-xs text-gray-500 mt-1 font-sans">
+                快取讀取: {usage.cache_read_input_tokens.toLocaleString()} tokens
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
