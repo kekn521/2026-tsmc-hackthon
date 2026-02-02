@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_hours: int = 24
 
+    # LLM 設定 - Anthropic
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-4-5-20250929"
+
     # Vertex AI 設定
     gcp_project_id: str = ""
     gcp_location: str = "us-central1"

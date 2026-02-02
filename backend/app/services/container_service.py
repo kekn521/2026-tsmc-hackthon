@@ -74,6 +74,13 @@ class ContainerService:
             else:
                 logger.info("📦 生產模式：使用 image 內建的 agent")
 
+            # 準備環境變數
+            env_vars = []
+
+            # 傳遞 ANTHROPIC_API_KEY（如果有設定）
+            if hasattr(settings, 'anthropic_api_key') and settings.anthropic_api_key:
+                env_vars.extend(["-e", f"ANTHROPIC_API_KEY={settings.anthropic_api_key}"])
+
             # 建立容器
             cmd = [
                 "docker", "create",
@@ -84,6 +91,7 @@ class ContainerService:
                 "--memory", settings.container_memory_limit,
                 "--cpus", str(settings.container_cpu_limit),
                 *volume_args,  # 加入 volume 參數
+                *env_vars,     # 加入環境變數
                 image
             ]
 
